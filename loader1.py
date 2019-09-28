@@ -21,6 +21,9 @@ def load_all(use_cache=True, override=False):
     :return:
     """
     # Check if files already exist in CACHE_DIR and warn user
+    if not os.path.isdir(CACHE_DIR):
+        os.mkdir(CACHE_DIR)
+
     if len(os.listdir(CACHE_DIR)) > 1:
         print("Some files already exist in your CACHE_DIR. If you still want to run this function,\
               run with override=True")
