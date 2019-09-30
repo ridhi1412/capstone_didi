@@ -6,10 +6,10 @@ Created on Fri Sep 27 11:28:24 2019
 """
 
 import os
+import sys
 import tarfile
 import pandas as pd
 from common import DATA_DIR, CACHE_DIR
-from sys import exit
 
 
 def load_all(use_cache=True, override=False):
@@ -24,14 +24,14 @@ def load_all(use_cache=True, override=False):
     if not os.path.isdir(CACHE_DIR):
         os.mkdir(CACHE_DIR)
 
-    if len(os.listdir(CACHE_DIR)) > 1:
+    if len(os.listdir(CACHE_DIR)) > 1 and not override:
         print("Some files already exist in your CACHE_DIR. If you still want to run this function,\
               run with override=True")
         return
 
     i = 1
     for file in os.listdir(DATA_DIR):
-        print('Processing {} of 30 files'.format(i))
+        print(f'Processing {i} of 30 files')
         file_path = os.path.join(DATA_DIR, file)
         tar = tarfile.open(file_path, "r:gz")
         for member in tar.getmembers():
@@ -63,11 +63,14 @@ def read_data(data_type, date='20161101', sample=1):
     df = pd.read_msgpack(file_path)
     if sample < 1:
         df_sample = df.sample(frac=sample, random_state=42)
-    else:
+    elif sample == 1:
         df_sample = df
+    else:
+        sys.exit('Sample size can be atmost 1')
 
     return df_sample
 
-# load_all()
+if __name__ == '__main__':
+    load_all()
 
 
