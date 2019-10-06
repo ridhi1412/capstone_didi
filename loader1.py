@@ -9,8 +9,43 @@ import os
 import sys
 import tarfile
 import pandas as pd
+from datetime import datetime
 from common import DATA_DIR, CACHE_DIR
 
+
+def convert_unix_ts(df, timecols):
+    """
+    converts unix timestamp columns to human readable datetime
+    :param df: imput dataframe
+    :param timecols: list of columns containing unix timestamp
+    :return: dataframe with unix timestamp columns converted to datetime
+    """
+
+    def convert(x):
+        return datetime.utcfromtimestamp(int(x)).strftime('%Y-%m-%d %H:%M:%S')
+
+    for col in timecols:
+        #        df[col] = df[col].apply(lambda x: convert(x))
+        #        df[col] = pd.DatetimeIndex(pd.to_datetime(df[col])).tz_localize('UTC')\
+        #            .tz_convert('Asia/Shanghai').tz_localize(None)
+
+        df[col] = pd.to_datetime(df[col], unit='s')
+        df[col] = pd.DatetimeIndex(df[col]).tz_localize('UTC')\
+            .tz_convert('Asia/Shanghai').tz_localize(None)
+
+def ride_duration(df):
+    """
+    Add column for duration of ride in minutes
+    :param df: Input dataframe
+    :return:
+    """
+    assert 'ride_start_timestamp' in list(
+        df.columns) and 'ride_stop_timestamp' in list(df.columns)
+
+    df['ride_duration'] = (df.ride_stop_timestamp -
+                           df.ride_start_timestamp).dt.total_seconds() / 60
+
+    return df
 
 def load_all(use_cache=True, override=False):
     """
@@ -35,7 +70,7 @@ def load_all(use_cache=True, override=False):
         print(f'Processing {i} of 30 files')
         file_path = os.path.join(DATA_DIR, file)
         tar = tarfile.open(file_path, "r:gz")
-        for member in tar.getmembers():
+        for member in reversed(tar.getmembers()):
             cache_path = os.path.join(CACHE_DIR, f'{member.name}.msgpack')
             print(member.name)
             if member.name.startswith('gps'):
@@ -43,15 +78,26 @@ def load_all(use_cache=True, override=False):
                     'driver_id', 'order_id', 'timestamp', 'longitude',
                     'latitude'
                 ]
-            else:
+                timecols = ['timestamp']
+            elif member.name.startswith('order'):
                 col_names = [
                     'order_id', 'ride_start_timestamp', 'ride_stop_timestamp',
                     'pickup_longitude', 'pickup_latitude', 'dropoff_longitude',
                     'dropoff_latitude'
                 ]
+                timecols = ['ride_start_timestamp', 'ride_stop_timestamp']
+            else:
+                sys.exit()
             f = tar.extractfile(member)
             if f is not None:
                 df = pd.read_csv(f, header=None, names=col_names)
+                df.drop_duplicates(inplace=True)
+                convert_unix_ts(df, timecols)
+                if member.name.startswith('order'):
+                    ride_duration(df)
+                    df.sort_values(by=['order_id', 'ride_start_timestamp'], inplace=True)
+                if member.name.startswith('gps'):
+                    df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
                 pd.to_msgpack(cache_path, df)
         i += 1
 
