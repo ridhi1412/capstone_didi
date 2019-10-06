@@ -34,8 +34,7 @@ def ride_duration(df):
     """
     assert 'ride_start_timestamp' in list(df.columns) and 'ride_stop_timestamp' in list(df.columns)
 
-    df['ride_duration'] = df.apply(lambda x: (x['ride_stop_timestamp'] - x['ride_start_timestamp']).seconds / 60,
-                                   axis=1)
+    df['ride_duration'] = (df.ride_stop_timestamp - df.ride_start_timestamp).dt.seconds / 60
 
     return df
 
