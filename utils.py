@@ -21,7 +21,8 @@ def convert_unix_ts(df, timecols):
 
     for col in timecols:
         df[col] = df[col].apply(lambda x: convert(x))
-        df[col] = pd.to_datetime(df[col])
+        df[col] = pd.DatetimeIndex(pd.to_datetime(df[col])).tz_localize('UTC')\
+            .tz_convert('Asia/Shanghai').tz_localize(None)
 
     return df
 
@@ -34,7 +35,7 @@ def ride_duration(df):
     """
     assert 'ride_start_timestamp' in list(df.columns) and 'ride_stop_timestamp' in list(df.columns)
 
-    df['ride_duration'] = (df.ride_stop_timestamp - df.ride_start_timestamp).dt.total_seconds / 60
+    df['ride_duration'] = (df.ride_stop_timestamp - df.ride_start_timestamp).dt.total_seconds() / 60
 
     return df
 
