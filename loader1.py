@@ -33,6 +33,7 @@ def convert_unix_ts(df, timecols):
         df[col] = pd.DatetimeIndex(df[col]).tz_localize('UTC')\
             .tz_convert('Asia/Shanghai').tz_localize(None)
 
+
 def ride_duration(df):
     """
     Add column for duration of ride in minutes
@@ -46,6 +47,7 @@ def ride_duration(df):
                            df.ride_start_timestamp).dt.total_seconds() / 60
 
     return df
+
 
 def load_all(use_cache=True, override=False):
     """
@@ -95,7 +97,8 @@ def load_all(use_cache=True, override=False):
                 convert_unix_ts(df, timecols)
                 if member.name.startswith('order'):
                     ride_duration(df)
-                    df.sort_values(by=['order_id', 'ride_start_timestamp'], inplace=True)
+                    df.sort_values(
+                        by=['order_id', 'ride_start_timestamp'], inplace=True)
                 if member.name.startswith('gps'):
                     df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
                 pd.to_msgpack(cache_path, df)
