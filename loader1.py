@@ -25,7 +25,8 @@ def load_all(use_cache=True, override=False):
         os.mkdir(CACHE_DIR)
 
     if len(os.listdir(CACHE_DIR)) > 1 and not override:
-        print("Some files already exist in your CACHE_DIR. If you still want to run this function,\
+        print(
+            "Some files already exist in your CACHE_DIR. If you still want to run this function,\
               run with override=True")
         return
 
@@ -38,10 +39,16 @@ def load_all(use_cache=True, override=False):
             cache_path = os.path.join(CACHE_DIR, f'{member.name}.msgpack')
             print(member.name)
             if member.name.startswith('gps'):
-                col_names = ['driver_id', 'order_id', 'timestamp', 'longitude', 'latitude']
+                col_names = [
+                    'driver_id', 'order_id', 'timestamp', 'longitude',
+                    'latitude'
+                ]
             else:
-                col_names = ['order_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'pickup_longitude',
-                             'pickup_latitude', 'dropoff_longitude', 'dropoff_latitude']
+                col_names = [
+                    'order_id', 'ride_start_timestamp', 'ride_stop_timestamp',
+                    'pickup_longitude', 'pickup_latitude', 'dropoff_longitude',
+                    'dropoff_latitude'
+                ]
             f = tar.extractfile(member)
             if f is not None:
                 df = pd.read_csv(f, header=None, names=col_names)
@@ -60,6 +67,7 @@ def read_data(data_type, date='20161101', sample=1):
     """
     file_name = data_type + '_' + date
     file_path = os.path.join(CACHE_DIR, f'{file_name}.msgpack')
+    print(f'file path is {file_path}')
     df = pd.read_msgpack(file_path)
     if sample < 1:
         df_sample = df.sample(frac=sample, random_state=42)
@@ -70,7 +78,6 @@ def read_data(data_type, date='20161101', sample=1):
 
     return df_sample
 
+
 if __name__ == '__main__':
     load_all()
-
-
