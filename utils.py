@@ -34,7 +34,7 @@ def ride_duration(df):
     """
     assert 'ride_start_timestamp' in list(df.columns) and 'ride_stop_timestamp' in list(df.columns)
 
-    df['ride_duration'] = (df.ride_stop_timestamp - df.ride_start_timestamp).dt.total_seconds / 60
+    df['ride_duration'] = (df.ride_stop_timestamp - df.ride_start_timestamp).dt.total_seconds() / 60
 
     return df
 
@@ -47,3 +47,28 @@ def driver_off_time():
     :return:
     """
     return
+
+
+def diff_between_rides(df):
+    """
+    Calculating the active time
+    :param df:
+    :return:
+    """
+    df_new = df.copy()
+    df_new.sort_values(['driver_id', 'ride_start_timestamp'], inplace=True)
+    df_new['stop_time_shifted'] = df_new.groupby('driver_id')['ride_stop_timestamp'].shift(1)
+    df_new['diff'] = df_new['ride_start_timestamp'] - df_new['stop_time_shifted']
+
+    return df_new
+
+def idle_time_calculation(df, threshold = 3600, colname='diff'):
+    """
+
+    :param df:
+    :param threshold:
+    :return:
+    """
+    df_new = df[df[colname].dt.total_seconds() > 2 * threshold]
+    total_inactive_time = df_new.groupby('driver_id')[colname].sum().reset_index()
+    total_inactive_time['inactive_time'] = total_inactive_time['diff'].dt.total_seconds() / 60
