@@ -4,7 +4,7 @@
 
 # Edit at https://www.gitignore.io/?templates=python
 
-
+__pycache__/
 
 ### Python ###
 
