@@ -72,9 +72,14 @@ def load_all(use_cache=True, override=False):
         print(f'Processing {i} of 30 files')
         file_path = os.path.join(DATA_DIR, file)
         tar = tarfile.open(file_path, "r:gz")
-        for member in reversed(tar.getmembers()):
+        for member in tar.getmembers():
             cache_path = os.path.join(CACHE_DIR, f'{member.name}.msgpack')
             print(member.name)
+            if member.name.startswith('order'):
+                date_equality = pd.to_datetime(member.name[6:]).date()
+            if os.path.exists(cache_path):
+                print(f'{cache_path} exists')
+#                continue
             if member.name.startswith('gps'):
                 col_names = [
                     'driver_id', 'order_id', 'timestamp', 'longitude',
@@ -95,14 +100,28 @@ def load_all(use_cache=True, override=False):
                 df = pd.read_csv(f, header=None, names=col_names)
                 df.drop_duplicates(inplace=True)
                 convert_unix_ts(df, timecols)
+                if member.name.startswith('gps'):
+                    df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
+                    df_gps_date = pd.to_datetime(df.head(n=1)['timestamp'].iloc[0]).date()
+                    df_gps = df[['driver_id', 'order_id']].drop_duplicates()
                 if member.name.startswith('order'):
                     ride_duration(df)
                     df.sort_values(
                         by=['order_id', 'ride_start_timestamp'], inplace=True)
-                if member.name.startswith('gps'):
-                    df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
+                    assert(date_equality == df_gps_date)
+#                    TODO
+#assert(date_equality == df_gps_date)
+#                    breakpoint()
+                    df = df.merge(df_gps, on='order_id', how='left')
+
                 pd.to_msgpack(cache_path, df)
         i += 1
+
+def load_processed_dfs():
+    pass
+
+
+
 
 
 # todo incorporate multi-date file reads?
@@ -129,4 +148,4 @@ def read_data(data_type, date='20161101', sample=1):
 
 
 if __name__ == '__main__':
-    load_all()
+    load_all(override=True)
