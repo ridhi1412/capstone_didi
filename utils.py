@@ -20,11 +20,13 @@ def get_start_end_bins(df, date, cols):
         (datetime.datetime(year, month, day, 10, 30, 0) - date_curr),
         (datetime.datetime(year, month, day, 14, 30, 0) - date_curr),
         (datetime.datetime(year, month, day, 18, 30, 0) - date_curr),
-        (datetime.datetime(year, month, day, 23, 59, 59) - date_curr)
+        (datetime.datetime(year, month, day, 23, 59, 59) - date_curr),
+        (datetime.datetime(year, month, day, 5, 0, 0) + datetime.timedelta(days=1) - date_curr)
     ]
     for col in cols:
         df[f'{col}_only'] = df[f'{col}'] - date_curr
         df[f'{col}_bin'] = pd.cut(x=df[f'{col}_only'], bins=bins)
+        df.drop(columns=[f'{col}_only'], inplace=True)
 
 def driver_off_time():
     """
