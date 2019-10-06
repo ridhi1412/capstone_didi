@@ -8,11 +8,6 @@ Created on Fri Sep 27 11:28:24 2019
 import pandas as pd
 
 
-
-
-
-
-
 def driver_off_time():
     """
     Creates dataframe with driver_id, app-on duration and ride-service duration based on the logic
@@ -21,14 +16,3 @@ def driver_off_time():
     :return:
     """
     return
-
-
-
-
-
-
-
-
-
-
-df
