@@ -27,6 +27,3 @@ CACHE_DIR = sys.argv[2]
 #args = vars(parser.parse_args())
 #DATA_DIR = args["data_dir"]
 #CACHE_DIR = args["cache_dir"]
-
-
-# e.g. -d r"C:\Users\rmahajan14\capstone_data\data" -c r"C:\Users\rmahajan14\capstone_data\cache"
