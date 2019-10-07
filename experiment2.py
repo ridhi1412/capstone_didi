@@ -5,15 +5,16 @@ Created on Sun Oct  6 14:11:27 2019
 @author: rmahajan14
 """
 
+import os
 import datetime
 import pandas as pd
 from utils import get_start_end_bins
 from loader1 import read_data
+from common import CACHE_DIR
 
-date_str_list = ['20161128', '20161129', '20161130']
-
-order = read_data('order', date='20161130', sample=1)
-order.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
+#date_str_list = ['20161128', '20161129', '20161130']
+#order = read_data('order', date='20161130', sample=1)
+#order.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
 
 
 def get_date_list(start='2016-11-01', end='2016-11-30'):
@@ -69,36 +70,39 @@ def create_features():
     Add all features
     """
 
-    orders = merge_order_df()
-    #    breakpoint()
-    pool_rides(orders)
-    get_start_end_bins(orders, ['ride_start_timestamp', 'ride_stop_timestamp'])
-
-    df_new = orders.groupby(['driver_id']).agg({
-        'ride_start_timestamp_bin': 'count',
-        'ride_stop_timestamp_bin': 'count',
-        'order_id': 'count',
-        'is_pool': 'sum'
-    }).reset_index()
-
-    df_new.rename(
-        columns={
-            'order_id': 'num_total_rides',
-            'is_pool': 'num_pool_rides'
-        },
-        inplace=True)
-
-    df_new['% of pool rides'] = (
-        df_new['num_pool_rides'] / df_new['num_total_rides'])
+    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    if os.path.exists(cache_path):
+        print(f'{cache_path} exists')
+        df_new = pd.read_msgpack(cache_path)
+    else:
+        orders = merge_order_df()
+        pool_rides(orders)
+        get_start_end_bins(orders, ['ride_start_timestamp', 'ride_stop_timestamp'])
+    
+        df_new = orders.groupby(['driver_id']).agg({
+            'ride_start_timestamp_bin': 'count',
+            'ride_stop_timestamp_bin': 'count',
+            'order_id': 'count',
+            'is_pool': 'sum'
+        }).reset_index()
+    
+        df_new.rename(
+            columns={
+                'order_id': 'num_total_rides',
+                'is_pool': 'num_pool_rides'
+            },
+            inplace=True)
+    
+        df_new['% of pool rides'] = (
+            df_new['num_pool_rides'] / df_new['num_total_rides'])
+        pd.to_msgpack(cache_path, df_new)
 
     return df_new
 
 
 df_new = create_features()
-
-#get_start_end_bins(df_new, date,
+#    get_start_end_bins(df_new, date,
 #                   ['ride_start_timestamp', 'ride_stop_timestamp'])
-
 #    break
 #    gps_df = read_data('gps', date=date, sample=1)
 #    drivers = gps_df[['driver_id', 'order_id']].drop_duplicates()
@@ -106,6 +110,3 @@ df_new = create_features()
 #    df = orders.loc[orders['driver_id'] == '025a8a42a4cd1d0ca336d4743e98fe64']
 #    df = orders.loc[orders['driver_id'] == '0009873b1084c284cc143db9d6cfdbf0']
 
-#to experiment
-#df['bin'] = pd.qcut(df['ride_start_timestamp'], 4)
-#count = df['bin'].unique()
