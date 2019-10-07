@@ -79,7 +79,7 @@ def load_all(use_cache=True, override=False):
                 date_equality = pd.to_datetime(member.name[6:]).date()
             if os.path.exists(cache_path):
                 print(f'{cache_path} exists')
-#                continue
+                continue
             if member.name.startswith('gps'):
                 col_names = [
                     'driver_id', 'order_id', 'timestamp', 'longitude',
@@ -102,26 +102,25 @@ def load_all(use_cache=True, override=False):
                 convert_unix_ts(df, timecols)
                 if member.name.startswith('gps'):
                     df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
-                    df_gps_date = pd.to_datetime(df.head(n=1)['timestamp'].iloc[0]).date()
+                    df_gps_date = pd.to_datetime(
+                        df.head(n=1)['timestamp'].iloc[0]).date()
                     df_gps = df[['driver_id', 'order_id']].drop_duplicates()
                 if member.name.startswith('order'):
                     ride_duration(df)
                     df.sort_values(
                         by=['order_id', 'ride_start_timestamp'], inplace=True)
-                    assert(date_equality == df_gps_date)
-#                    TODO
-#assert(date_equality == df_gps_date)
-#                    breakpoint()
+                    assert (date_equality == df_gps_date)
+                    #                    TODO
+                    #assert(date_equality == df_gps_date)
+                    #                    breakpoint()
                     df = df.merge(df_gps, on='order_id', how='left')
 
                 pd.to_msgpack(cache_path, df)
         i += 1
 
+
 def load_processed_dfs():
     pass
-
-
-
 
 
 # todo incorporate multi-date file reads?
