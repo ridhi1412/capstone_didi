@@ -6,8 +6,7 @@ Created on Fri Sep 27 11:28:24 2019
 """
 
 import pandas as pd
-
-#import datetime
+import utm
 
 
 def get_start_end_bins(df, cols):
@@ -20,28 +19,28 @@ def get_start_end_bins(df, cols):
         df[f'{col}_only_time'] = df[f'{col}'] - df[f'{col}'].dt.normalize()
         #        breakpoint()
         df[f'{col}_bin'] = pd.qcut(df[f'{col}_only_time'], 4)
-        #count = df['bin'].unique()
-    #TODO remove hard coding
 
 
-#    bins = [(datetime.datetime(year, month, day, 00, 0, 0) - date_curr),
-#            (datetime.datetime(year, month, day, 10, 30, 0) - date_curr),
-#            (datetime.datetime(year, month, day, 14, 30, 0) - date_curr),
-#            (datetime.datetime(year, month, day, 18, 30, 0) - date_curr),
-#            (datetime.datetime(year, month, day, 23, 59, 59) - date_curr),
-#            (datetime.datetime(year, month, day, 5, 0, 0) +
-#             datetime.timedelta(days=1) - date_curr)]
-#    for col in cols:
-#        df[f'{col}_only_time'] = df[f'{col}'] - date_curr
-#        df[f'{col}_bin'] = pd.cut(x=df[f'{col}_only'], bins=bins)
-#        df.drop(columns=[f'{col}_only'], inplace=True)
+def get_spatial_features(df, grid_x_num=40, grid_y_num=40):
+    temp_pickup = df.apply(lambda x: utm.from_latlon(x['pickup_latitude'], x['pickup_longitude'])[0:2], axis=1)
+    temp_drop = df.apply(lambda x: utm.from_latlon(x['dropoff_latitude'], x['dropoff_longitude'])[0:2], axis=1)
 
+    df['xpickup'] = temp_pickup.str[0]
+    df['ypickup'] = temp_pickup.str[1]
 
-def driver_off_time():
-    """
-    Creates dataframe with driver_id, app-on duration and ride-service duration based on the logic
-    that driver is not servicing a ride between timestamps
+    df['xdropoff'] = temp_drop.str[0]
+    df['ydropoff'] = temp_drop.str[1]
 
-    :return:
-    """
-    return
+    tempx = pd.cut(df['xpickup'], bins=grid_x_num).astype(str)
+    tempy = pd.cut(df['ypickup'], bins=grid_y_num).astype(str)
+    df['pick_up_zone'] = tempx + tempy
+
+    tempx = pd.cut(df['xdropoff'], bins=grid_x_num).astype(str)
+    tempy = pd.cut(df['ydropoff'], bins=grid_y_num).astype(str)
+    df['drop_off_zone'] = tempx + tempy
+
+    temp = (df.groupby(['driver_id', 'pick_up_zone']).count() / df.groupby(
+        ['driver_id']).count()).unstack(level=1)
+
+    temp.fillna(0, inplace=True)
+    return temp
