@@ -99,7 +99,8 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         
         temp1.rename(columns={'':'driver_id'}, inplace=True)
         temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
-        
+        new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
+        temp1.columns = new_cols
         df_new = orders.groupby(['driver_id']).agg({
             'order_id': 'count',
             'is_pool': 'sum'
