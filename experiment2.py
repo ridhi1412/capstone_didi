@@ -8,7 +8,7 @@ Created on Sun Oct  6 14:11:27 2019
 import os
 import datetime
 import pandas as pd
-from utils import get_start_end_bins
+from utils import get_start_end_bins, get_spatial_features
 from loader1 import read_data
 from common import CACHE_DIR
 
@@ -47,14 +47,14 @@ def pool_rides(orders):
 #    return orders
 
 
-def merge_order_df():
+def merge_order_df(start='2016-11-01', end='2016-11-30'):
     """
     Concatenate order dataframes for given dates
     """
 
     df_new_list = []
 
-    date_str_list = get_date_list()
+    date_str_list = get_date_list(start=start, end=end)
 
     for date in date_str_list:
         order = read_data('order', date=date, sample=1)
@@ -65,23 +65,42 @@ def merge_order_df():
     return orders
 
 
-def create_features():
+def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     """
     Add all features
     """
 
     cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
-    if os.path.exists(cache_path):
+    if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         df_new = pd.read_msgpack(cache_path)
     else:
-        orders = merge_order_df()
+        orders = merge_order_df(start, end)
         pool_rides(orders)
         get_start_end_bins(orders, ['ride_start_timestamp', 'ride_stop_timestamp'])
     
+#        breakpoint()
+        
+        grouped_tmp = orders[['driver_id', 'ride_start_timestamp_bin', 'order_id']].groupby([
+            'driver_id', 'ride_start_timestamp_bin']).count(
+            ) / orders[['driver_id', 'ride_start_timestamp_bin', 'order_id']].groupby(
+        ['driver_id'])[['order_id']].count()
+        
+        temp1 = grouped_tmp.unstack(level=0)
+        temp1.fillna(0, inplace=True)
+#        breakpoint()
+        temp1.reset_index(inplace=True)
+        temp1 = temp1.T
+        temp1.reset_index(inplace=True)
+        
+        cols = temp1.iloc[0]
+        temp1 = temp1.loc[1:]
+        temp1.columns = cols
+        
+        temp1.rename(columns={'':'driver_id'}, inplace=True)
+        temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
+        
         df_new = orders.groupby(['driver_id']).agg({
-            'ride_start_timestamp_bin': 'count',
-            'ride_stop_timestamp_bin': 'count',
             'order_id': 'count',
             'is_pool': 'sum'
         }).reset_index()
@@ -96,11 +115,39 @@ def create_features():
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
         pd.to_msgpack(cache_path, df_new)
+        
+        breakpoint()
+        df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
-    return df_new
+    return df_final
+
+orders = merge_order_df(start='2016-11-01', end='2016-11-01')
+df_final = create_features(start='2016-11-01', end='2016-11-01', use_cache=False)
 
 
-df_new = create_features()
+spatial_df = get_spatial_features(orders).reset_index()
+
+
+
+#TODO think
+#temp_in = temp.reset_index()
+#temp_in = temp_in.drop(columns=['level_0'])
+#temp_str = temp_in.drop_duplicates()
+#len(list(temp_in['driver_id'].unique()))
+#aa= temp_str.loc[temp_str['driver_id'] == '0000131d486b69eb77ab6e9e7cca9f4c'].T
+
+
+
+
+
+
+
+
+
+
+
+
+
 #    get_start_end_bins(df_new, date,
 #                   ['ride_start_timestamp', 'ride_stop_timestamp'])
 #    break
