@@ -128,12 +128,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     return df_final
 
 orders = merge_order_df(start='2016-11-01', end='2016-11-30')
-#df_final = create_features(start='2016-11-01', end='2016-11-01', use_cache=False)
-#
-#
-#spatial_df = get_spatial_features(orders).reset_index()
-#spatial_df.drop(columns=['level_0'], inplace=True)
-#df_final = pd.merge(df_final,  spatial_df, on=['driver_id'], how='inner')
+
 
 cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
 
@@ -143,14 +138,19 @@ target_df.sort_values('driver_id', inplace=True)
 
 target_df.head()
 
+df_final = create_features(start='2016-11-01', end='2016-11-30', use_cache=False)
+spatial_df = get_spatial_features(orders).reset_index()
+spatial_df.drop(columns=['level_0'], inplace=True)
+df_final = pd.merge(df_final,  spatial_df, on=['driver_id'], how='inner')
 #pd.to_msgpack(cache_path, df_final)
-
-df_final = pd.read_msgpack(cache_path)
+#
+#df_final = pd.read_msgpack(cache_path)
 df_final.sort_values('driver_id', inplace=True)
 df_final.set_index('driver_id', inplace=True)
 
 #X = df_final.drop(columns=['num_total_rides'])
 X = df_final
+
 
 xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
 
