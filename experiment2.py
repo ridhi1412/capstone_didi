@@ -151,6 +151,7 @@ df_final.set_index('driver_id', inplace=True)
 #X = df_final.drop(columns=['num_total_rides'])
 X = df_final
 
+
 xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
 
 sc = StandardScaler()
