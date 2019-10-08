@@ -8,6 +8,7 @@ Created on Fri Sep 27 11:28:24 2019
 import pandas as pd
 import utm
 import os
+import numpy as np
 
 from common import CACHE_DIR
 
