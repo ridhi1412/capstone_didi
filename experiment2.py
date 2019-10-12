@@ -16,7 +16,6 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 
-
 #date_str_list = ['20161128', '20161129', '20161130']
 #order = read_data('order', date='20161130', sample=1)
 #order.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
@@ -82,27 +81,30 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     else:
         orders = merge_order_df(start, end)
         pool_rides(orders)
-        get_start_end_bins(orders, ['ride_start_timestamp', 'ride_stop_timestamp'])
-    
-#        breakpoint()
-        
-        grouped_tmp = orders[['driver_id', 'ride_start_timestamp_bin', 'order_id']].groupby([
-            'driver_id', 'ride_start_timestamp_bin']).count(
-            ) / orders[['driver_id', 'ride_start_timestamp_bin', 'order_id']].groupby(
-        ['driver_id'])[['order_id']].count()
-        
+        get_start_end_bins(orders,
+                           ['ride_start_timestamp', 'ride_stop_timestamp'])
+
+        #        breakpoint()
+
+        grouped_tmp = orders[[
+            'driver_id', 'ride_start_timestamp_bin', 'order_id'
+        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
+                    ]).count() / orders[[
+                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
+                    ]].groupby(['driver_id'])[['order_id']].count()
+
         temp1 = grouped_tmp.unstack(level=0)
         temp1.fillna(0, inplace=True)
-#        breakpoint()
+        #        breakpoint()
         temp1.reset_index(inplace=True)
         temp1 = temp1.T
         temp1.reset_index(inplace=True)
-        
+
         cols = temp1.iloc[0]
         temp1 = temp1.loc[1:]
         temp1.columns = cols
-        
-        temp1.rename(columns={'':'driver_id'}, inplace=True)
+
+        temp1.rename(columns={'': 'driver_id'}, inplace=True)
         temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
         new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
         temp1.columns = new_cols
@@ -110,38 +112,40 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
             'order_id': 'count',
             'is_pool': 'sum'
         }).reset_index()
-    
+
         df_new.rename(
             columns={
                 'order_id': 'num_total_rides',
                 'is_pool': 'num_pool_rides'
             },
             inplace=True)
-    
+
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
         pd.to_msgpack(cache_path, df_new)
-        
+
         breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
     return df_final
 
-orders = merge_order_df(start='2016-11-01', end='2016-11-30')
 
+orders = merge_order_df(start='2016-11-01', end='2016-11-30')
 
 cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
 
 target_df = create_modified_active_time(orders)
-target_df['target'] = target_df['ride_duration'] / target_df['modified_active_time_with_rules']
+target_df['target'] = target_df['ride_duration'] / target_df[
+    'modified_active_time_with_rules']
 target_df.sort_values('driver_id', inplace=True)
 
 target_df.head()
 
-df_final = create_features(start='2016-11-01', end='2016-11-30', use_cache=False)
+df_final = create_features(
+    start='2016-11-01', end='2016-11-30', use_cache=False)
 spatial_df = get_spatial_features(orders).reset_index()
 spatial_df.drop(columns=['level_0'], inplace=True)
-df_final = pd.merge(df_final,  spatial_df, on=['driver_id'], how='inner')
+df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
 #pd.to_msgpack(cache_path, df_final)
 #
 #df_final = pd.read_msgpack(cache_path)
@@ -150,7 +154,6 @@ df_final.set_index('driver_id', inplace=True)
 
 #X = df_final.drop(columns=['num_total_rides'])
 X = df_final
-
 
 xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
 
@@ -164,26 +167,12 @@ rr.fit(xtrain_sc, ytrain)
 #print(rr.coef_)
 print(rr.score(xtrain_sc, ytrain))
 
-
-
 #TODO think
 #temp_in = temp.reset_index()
 #temp_in = temp_in.drop(columns=['level_0'])
 #temp_str = temp_in.drop_duplicates()
 #len(list(temp_in['driver_id'].unique()))
 #aa= temp_str.loc[temp_str['driver_id'] == '0000131d486b69eb77ab6e9e7cca9f4c'].T
-
-
-
-
-
-
-
-
-
-
-
-
 
 #    get_start_end_bins(df_new, date,
 #                   ['ride_start_timestamp', 'ride_stop_timestamp'])
@@ -193,4 +182,3 @@ print(rr.score(xtrain_sc, ytrain))
 #    orders = orders.merge(drivers, on='order_id', how='left')
 #    df = orders.loc[orders['driver_id'] == '025a8a42a4cd1d0ca336d4743e98fe64']
 #    df = orders.loc[orders['driver_id'] == '0009873b1084c284cc143db9d6cfdbf0']
-
