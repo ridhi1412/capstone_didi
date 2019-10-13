@@ -72,9 +72,20 @@ def load_all(use_cache=True, override=False):
         print(f'Processing {i} of 30 files')
         file_path = os.path.join(DATA_DIR, file)
         tar = tarfile.open(file_path, "r:gz")
+<<<<<<< HEAD
         for member in reversed(tar.getmembers()):
             cache_path = os.path.join(CACHE_DIR, f'{member.name}.msgpack')
             print(member.name)
+=======
+        for member in tar.getmembers():
+            cache_path = os.path.join(CACHE_DIR, f'{member.name}.msgpack')
+            print(member.name)
+            if member.name.startswith('order'):
+                date_equality = pd.to_datetime(member.name[6:]).date()
+            if os.path.exists(cache_path):
+                print(f'{cache_path} exists')
+                continue
+>>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
             if member.name.startswith('gps'):
                 col_names = [
                     'driver_id', 'order_id', 'timestamp', 'longitude',
@@ -95,16 +106,40 @@ def load_all(use_cache=True, override=False):
                 df = pd.read_csv(f, header=None, names=col_names)
                 df.drop_duplicates(inplace=True)
                 convert_unix_ts(df, timecols)
+<<<<<<< HEAD
+=======
+                if member.name.startswith('gps'):
+                    df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
+                    df_gps_date = pd.to_datetime(
+                        df.head(n=1)['timestamp'].iloc[0]).date()
+                    df_gps = df[['driver_id', 'order_id']].drop_duplicates()
+>>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
                 if member.name.startswith('order'):
                     ride_duration(df)
                     df.sort_values(
                         by=['order_id', 'ride_start_timestamp'], inplace=True)
+<<<<<<< HEAD
                 if member.name.startswith('gps'):
                     df.sort_values(by=['driver_id', 'timestamp'], inplace=True)
+=======
+                    assert (date_equality == df_gps_date)
+                    #                    TODO
+                    #assert(date_equality == df_gps_date)
+                    #                    breakpoint()
+                    df = df.merge(df_gps, on='order_id', how='left')
+
+>>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
                 pd.to_msgpack(cache_path, df)
         i += 1
 
 
+<<<<<<< HEAD
+=======
+def load_processed_dfs():
+    pass
+
+
+>>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
 # todo incorporate multi-date file reads?
 def read_data(data_type, date='20161101', sample=1):
     """
@@ -129,4 +164,8 @@ def read_data(data_type, date='20161101', sample=1):
 
 
 if __name__ == '__main__':
+<<<<<<< HEAD
     load_all()
+=======
+    load_all(override=True)
+>>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
