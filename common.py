@@ -9,11 +9,9 @@ import sys
 DATA_DIR = sys.argv[1]
 CACHE_DIR = sys.argv[2]
 
-<<<<<<< HEAD
-=======
-# "C:\Users\rmahajan14\capstone_data\data" "C:\Users\rmahajan14\capstone_data\cache"
 
->>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
+# "C:\Users\rmahajan14\capstone_data\data" "C:\Users\rmahajan14\capstone_data\cache"
+# "P:\rmahajan14\capstone_data\data" "P:\rmahajan14\capstone_data\cache"
 #import argparse
 
 #parser = argparse.ArgumentParser(description="Transfer bep reports to BCS")

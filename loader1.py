@@ -21,14 +21,7 @@ def convert_unix_ts(df, timecols):
     :return: dataframe with unix timestamp columns converted to datetime
     """
 
-    def convert(x):
-        return datetime.utcfromtimestamp(int(x)).strftime('%Y-%m-%d %H:%M:%S')
-
     for col in timecols:
-        #        df[col] = df[col].apply(lambda x: convert(x))
-        #        df[col] = pd.DatetimeIndex(pd.to_datetime(df[col])).tz_localize('UTC')\
-        #            .tz_convert('Asia/Shanghai').tz_localize(None)
-
         df[col] = pd.to_datetime(df[col], unit='s')
         df[col] = pd.DatetimeIndex(df[col]).tz_localize('UTC')\
             .tz_convert('Asia/Shanghai').tz_localize(None)

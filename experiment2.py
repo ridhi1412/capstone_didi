@@ -59,24 +59,30 @@ def pool_rides(orders):
     orders['is_pool'] = (orders['cond_1'] & orders['cond_2'])
 
 
-#    return orders
 
-
-def merge_order_df(start='2016-11-01', end='2016-11-30'):
+def merge_order_df(start='2016-11-01', end='2016-11-30',
+                   use_cache=True):
     """
     Concatenate order dataframes for given dates
     """
 
-    df_new_list = []
+    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        orders = pd.read_msgpack(cache_path)
+    else:
+        
+        df_new_list = []
 
-    date_str_list = get_date_list(start=start, end=end)
-
-    for date in date_str_list:
-        order = read_data('order', date=date, sample=1)
-        df_new_list += [order.copy()]
-
-    orders = pd.concat(df_new_list, sort=False)
-
+        date_str_list = get_date_list(start=start, end=end)
+    
+        for date in date_str_list:
+            order = read_data('order', date=date, sample=1)
+            df_new_list += [order.copy()]
+    
+        orders = pd.concat(df_new_list, sort=False)
+        pd.to_msgpack(cache_path, orders)
+        print(f'Dumping to {cache_path}')
     return orders
 
 
@@ -85,7 +91,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     Add all features
     """
 
-    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    cache_path = os.path.join(CACHE_DIR, f'features_orders.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         df_new = pd.read_msgpack(cache_path)
@@ -97,6 +103,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
         #        breakpoint()
 
+        print('a')
         grouped_tmp = orders[[
             'driver_id', 'ride_start_timestamp_bin', 'order_id'
         ]].groupby(['driver_id', 'ride_start_timestamp_bin'
@@ -114,7 +121,9 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         cols = temp1.iloc[0]
         temp1 = temp1.loc[1:]
         temp1.columns = cols
-
+        
+        print('b')
+        
         temp1.rename(columns={'': 'driver_id'}, inplace=True)
         temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
         new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
@@ -123,7 +132,8 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
             'order_id': 'count',
             'is_pool': 'sum'
         }).reset_index()
-
+        
+        print('c')
         df_new.rename(
             columns={
                 'order_id': 'num_total_rides',
@@ -133,50 +143,60 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
+        print('d')
         pd.to_msgpack(cache_path, df_new)
-
-        breakpoint()
+        print(f'Dumping to {cache_path}')
+#        breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
     return df_final
 
+def get_final_df_reg(use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        df_final = pd.read_msgpack(cache_path)
+    else:
+        start = '2016-11-01'
+        end = '2016-11-30'
+        orders = merge_order_df(start=start, end=end)
+        print('orders')
+        
+        target_df = create_modified_active_time(orders)
+        target_df['target'] = target_df['ride_duration'] / target_df[
+            'modified_active_time_with_rules']
+        target_df.sort_values('driver_id', inplace=True)
+        
+        print('1e')
+        df_final = create_features(
+            start='2016-11-01', end='2016-11-30', use_cache=False)
+        print('1f')
+        spatial_df = get_spatial_features(orders)
+        print('spatial')
+        
+        df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+        df_final.sort_values('driver_id', inplace=True)
+        df_final.set_index('driver_id', inplace=True)
+        pd.to_msgpack(cache_path, df_final)
+    return df_final
 
-orders = merge_order_df(start='2016-11-01', end='2016-11-30')
 
-cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
+df_final = get_final_df_reg()
 
-target_df = create_modified_active_time(orders)
-target_df['target'] = target_df['ride_duration'] / target_df[
-    'modified_active_time_with_rules']
-target_df.sort_values('driver_id', inplace=True)
-
-target_df.head()
-
-df_final = create_features(
-    start='2016-11-01', end='2016-11-30', use_cache=False)
-spatial_df = get_spatial_features(orders).reset_index()
-spatial_df.drop(columns=['level_0'], inplace=True)
-df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
-#pd.to_msgpack(cache_path, df_final)
+##X = df_final.drop(columns=['num_total_rides'])
+#X = df_final
 #
-#df_final = pd.read_msgpack(cache_path)
-df_final.sort_values('driver_id', inplace=True)
-df_final.set_index('driver_id', inplace=True)
-
-#X = df_final.drop(columns=['num_total_rides'])
-X = df_final
-
-xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
-
-sc = StandardScaler()
-xtrain_sc = sc.fit_transform(xtrain)
-
-rr = RandomForestRegressor()
-rr.fit(xtrain_sc, ytrain)
-rr.fit(xtrain_sc, ytrain)
-
-#print(rr.coef_)
-print(rr.score(xtrain_sc, ytrain))
+#xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
+#
+#sc = StandardScaler()
+#xtrain_sc = sc.fit_transform(xtrain)
+#
+#rr = RandomForestRegressor()
+#rr.fit(xtrain_sc, ytrain)
+#rr.fit(xtrain_sc, ytrain)
+#
+##print(rr.coef_)
+#print(rr.score(xtrain_sc, ytrain))
 
 #TODO think
 #temp_in = temp.reset_index()
