@@ -92,6 +92,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
         #        breakpoint()
 
+        print('a')
         grouped_tmp = orders[[
             'driver_id', 'ride_start_timestamp_bin', 'order_id'
         ]].groupby(['driver_id', 'ride_start_timestamp_bin'
@@ -109,7 +110,9 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         cols = temp1.iloc[0]
         temp1 = temp1.loc[1:]
         temp1.columns = cols
-
+        
+        print('b')
+        
         temp1.rename(columns={'': 'driver_id'}, inplace=True)
         temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
         new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
@@ -118,7 +121,8 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
             'order_id': 'count',
             'is_pool': 'sum'
         }).reset_index()
-
+        
+        print('c')
         df_new.rename(
             columns={
                 'order_id': 'num_total_rides',
@@ -128,9 +132,10 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
+        print('d')
         pd.to_msgpack(cache_path, df_new)
         print(f'Dumping to {cache_path}')
-        breakpoint()
+#        breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
     return df_final
@@ -142,7 +147,6 @@ end = '2016-11-30'
 orders = merge_order_df(start=start, end=end)
 print('orders')
 
-
 target_df = create_modified_active_time(orders)
 target_df['target'] = target_df['ride_duration'] / target_df[
     'modified_active_time_with_rules']
@@ -150,6 +154,7 @@ target_df.sort_values('driver_id', inplace=True)
 
 df_final = create_features(
     start='2016-11-01', end='2016-11-30', use_cache=False)
+print('1f')
 spatial_df = get_spatial_features(orders)
 print('spatial')
 

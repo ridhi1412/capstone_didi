@@ -57,6 +57,7 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
     return temp
 
 
+@profile
 def create_modified_active_time(orders):
     driver_start_times = orders.loc[:, [
         'driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id'
