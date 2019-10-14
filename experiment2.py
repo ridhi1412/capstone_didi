@@ -152,6 +152,7 @@ target_df['target'] = target_df['ride_duration'] / target_df[
     'modified_active_time_with_rules']
 target_df.sort_values('driver_id', inplace=True)
 
+print('1e')
 df_final = create_features(
     start='2016-11-01', end='2016-11-30', use_cache=False)
 print('1f')

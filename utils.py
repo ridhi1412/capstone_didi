@@ -128,5 +128,5 @@ def create_modified_active_time(orders):
         'driver_id', 'ride_duration', 'modified_active_time',
         'modified_active_time_with_rules'
     ]
-
+    
     return driver_stats_updated[cols]
