@@ -49,21 +49,29 @@ def pool_rides(orders):
 
 
 
-def merge_order_df(start='2016-11-01', end='2016-11-30'):
+def merge_order_df(start='2016-11-01', end='2016-11-30',
+                   use_cache=True):
     """
     Concatenate order dataframes for given dates
     """
 
-    df_new_list = []
+    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        orders = pd.read_msgpack(cache_path)
+    else:
+        
+        df_new_list = []
 
-    date_str_list = get_date_list(start=start, end=end)
-
-    for date in date_str_list:
-        order = read_data('order', date=date, sample=1)
-        df_new_list += [order.copy()]
-
-    orders = pd.concat(df_new_list, sort=False)
-
+        date_str_list = get_date_list(start=start, end=end)
+    
+        for date in date_str_list:
+            order = read_data('order', date=date, sample=1)
+            df_new_list += [order.copy()]
+    
+        orders = pd.concat(df_new_list, sort=False)
+        pd.to_msgpack(cache_path, orders)
+        print(f'Dumping to {cache_path}')
     return orders
 
 
@@ -72,7 +80,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     Add all features
     """
 
-    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    cache_path = os.path.join(CACHE_DIR, f'features_orders.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         df_new = pd.read_msgpack(cache_path)
@@ -121,33 +129,31 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
         pd.to_msgpack(cache_path, df_new)
-
+        print(f'Dumping to {cache_path}')
         breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
     return df_final
 
 
-orders = merge_order_df(start='2016-11-01', end='2016-11-30')
+
+start = '2016-11-01'
+end = '2016-11-30'
+orders = merge_order_df(start=start, end=end)
 print('orders')
-#
-#cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
-#
-#target_df = create_modified_active_time(orders)
-#target_df['target'] = target_df['ride_duration'] / target_df[
-#    'modified_active_time_with_rules']
-#target_df.sort_values('driver_id', inplace=True)
-#
-#target_df.head()
-#
-#df_final = create_features(
-#    start='2016-11-01', end='2016-11-30', use_cache=False)
-cache_path = os.path.join(CACHE_DIR, 'SPATIAL.msgpack')
-spatial_df = get_spatial_features(orders).reset_index()
+
+
+target_df = create_modified_active_time(orders)
+target_df['target'] = target_df['ride_duration'] / target_df[
+    'modified_active_time_with_rules']
+target_df.sort_values('driver_id', inplace=True)
+
+df_final = create_features(
+    start='2016-11-01', end='2016-11-30', use_cache=False)
+spatial_df = get_spatial_features(orders)
 print('spatial')
-pd.to_msgpack(cache_path, spatial_df)
-#spatial_df.drop(columns=['level_0'], inplace=True)
-#df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+
+df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
 ##pd.to_msgpack(cache_path, df_final)
 ##
 ##df_final = pd.read_msgpack(cache_path)
