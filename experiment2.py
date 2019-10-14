@@ -48,8 +48,6 @@ def pool_rides(orders):
     orders['is_pool'] = (orders['cond_1'] & orders['cond_2'])
 
 
-#    return orders
-
 
 def merge_order_df(start='2016-11-01', end='2016-11-30'):
     """
@@ -131,41 +129,41 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
 
 orders = merge_order_df(start='2016-11-01', end='2016-11-30')
-
-cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
-
-target_df = create_modified_active_time(orders)
-target_df['target'] = target_df['ride_duration'] / target_df[
-    'modified_active_time_with_rules']
-target_df.sort_values('driver_id', inplace=True)
-
-target_df.head()
-
-df_final = create_features(
-    start='2016-11-01', end='2016-11-30', use_cache=False)
-spatial_df = get_spatial_features(orders).reset_index()
-spatial_df.drop(columns=['level_0'], inplace=True)
-df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
-#pd.to_msgpack(cache_path, df_final)
 #
-#df_final = pd.read_msgpack(cache_path)
-df_final.sort_values('driver_id', inplace=True)
-df_final.set_index('driver_id', inplace=True)
-
-#X = df_final.drop(columns=['num_total_rides'])
-X = df_final
-
-xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
-
-sc = StandardScaler()
-xtrain_sc = sc.fit_transform(xtrain)
-
-rr = RandomForestRegressor()
-rr.fit(xtrain_sc, ytrain)
-rr.fit(xtrain_sc, ytrain)
-
-#print(rr.coef_)
-print(rr.score(xtrain_sc, ytrain))
+#cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
+#
+#target_df = create_modified_active_time(orders)
+#target_df['target'] = target_df['ride_duration'] / target_df[
+#    'modified_active_time_with_rules']
+#target_df.sort_values('driver_id', inplace=True)
+#
+#target_df.head()
+#
+#df_final = create_features(
+#    start='2016-11-01', end='2016-11-30', use_cache=False)
+spatial_df = get_spatial_features(orders).reset_index()
+#spatial_df.drop(columns=['level_0'], inplace=True)
+#df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+##pd.to_msgpack(cache_path, df_final)
+##
+##df_final = pd.read_msgpack(cache_path)
+#df_final.sort_values('driver_id', inplace=True)
+#df_final.set_index('driver_id', inplace=True)
+#
+##X = df_final.drop(columns=['num_total_rides'])
+#X = df_final
+#
+#xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
+#
+#sc = StandardScaler()
+#xtrain_sc = sc.fit_transform(xtrain)
+#
+#rr = RandomForestRegressor()
+#rr.fit(xtrain_sc, ytrain)
+#rr.fit(xtrain_sc, ytrain)
+#
+##print(rr.coef_)
+#print(rr.score(xtrain_sc, ytrain))
 
 #TODO think
 #temp_in = temp.reset_index()

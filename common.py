@@ -9,7 +9,7 @@ import sys
 DATA_DIR = sys.argv[1]
 CACHE_DIR = sys.argv[2]
 
-# "C:\Users\rmahajan14\capstone_data\data" "C:\Users\rmahajan14\capstone_data\cache"
+# "P:\rmahajan14\capstone_data\data" "P:\rmahajan14\capstone_data\cache"
 
 #import argparse
 
