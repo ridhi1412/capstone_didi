@@ -129,6 +129,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
 
 orders = merge_order_df(start='2016-11-01', end='2016-11-30')
+print('orders')
 #
 #cache_path = os.path.join(CACHE_DIR, 'ALL_FEATURES.msgpack')
 #
@@ -141,7 +142,10 @@ orders = merge_order_df(start='2016-11-01', end='2016-11-30')
 #
 #df_final = create_features(
 #    start='2016-11-01', end='2016-11-30', use_cache=False)
+cache_path = os.path.join(CACHE_DIR, 'SPATIAL.msgpack')
 spatial_df = get_spatial_features(orders).reset_index()
+print('spatial')
+pd.to_msgpack(cache_path, spatial_df)
 #spatial_df.drop(columns=['level_0'], inplace=True)
 #df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
 ##pd.to_msgpack(cache_path, df_final)

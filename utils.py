@@ -25,7 +25,7 @@ def get_start_end_bins(df, cols):
         df[f'{col}_bin'] = pd.qcut(df[f'{col}_only_time'], 4)
 
 
-def get_spatial_features(df, grid_x_num=40, grid_y_num=40):
+def get_spatial_features(df, grid_x_num=10, grid_y_num=10):
     #    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
     #    if os.path.exists(cache_path):
     #        print(f'{cache_path} exists')
