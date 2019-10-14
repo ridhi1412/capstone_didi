@@ -25,30 +25,24 @@ def get_start_end_bins(df, cols):
         df[f'{col}_bin'] = pd.qcut(df[f'{col}_only_time'], 4)
 
 
-def get_spatial_features(df, grid_x_num=40, grid_y_num=40):
+def get_spatial_features(df, grid_x_num=10, grid_y_num=10):
     #    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
     #    if os.path.exists(cache_path):
     #        print(f'{cache_path} exists')
     #        df_new = pd.read_msgpack(cache_path)
     #    else:
-
-    temp_pickup = df.apply(
-        lambda x: utm.from_latlon(x['pickup_latitude'], x['pickup_longitude'])[
-            0:2],
-        axis=1)
-    temp_drop = df.apply(
-        lambda x: utm.from_latlon(x['dropoff_latitude'], x['dropoff_longitude']
-                                  )[0:2],
-        axis=1)
-
-    df['xpickup'] = temp_pickup.str[0]
-    df['ypickup'] = temp_pickup.str[1]
-
-    df['xdropoff'] = temp_drop.str[0]
-    df['ydropoff'] = temp_drop.str[1]
-
-    #    breakpoint()
-
+    
+#    breakpoint()
+    pickup_coord = utm.from_latlon(df['pickup_latitude'].values, df['pickup_longitude'].values)
+    col1, col2 = pickup_coord[0], pickup_coord[1]
+    df['xpickup'] = col1
+    df['ypickup'] = col2
+    
+    dropoff_coord = utm.from_latlon(df['dropoff_latitude'].values, df['dropoff_longitude'].values)
+    col3, col4 = dropoff_coord[0], dropoff_coord[1]
+    df['xdropoff'] = col3
+    df['ydropoff'] = col4
+    
     tempx = pd.cut(df['xpickup'], bins=grid_x_num).astype(str)
     tempy = pd.cut(df['ypickup'], bins=grid_y_num).astype(str)
     df['pick_up_zone'] = tempx + tempy
@@ -57,10 +51,6 @@ def get_spatial_features(df, grid_x_num=40, grid_y_num=40):
     tempy = pd.cut(df['ydropoff'], bins=grid_y_num).astype(str)
     df['drop_off_zone'] = tempx + tempy
 
-    #    temp = (df.groupby(['driver_id', 'pick_up_zone']).count() / df.groupby(
-    #        ['driver_id']).count()).unstack(level=1)
-
-    #    breakpoint()
     grouped_tmp = df[['driver_id', 'pick_up_zone', 'pickup_latitude']].groupby(
         ['driver_id', 'pick_up_zone']).count() / df[[
             'driver_id', 'pick_up_zone', 'pickup_latitude'
