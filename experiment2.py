@@ -140,32 +140,38 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
     return df_final
 
+def get_final_df_reg(use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        df_final = pd.read_msgpack(cache_path)
+    else:
+        start = '2016-11-01'
+        end = '2016-11-30'
+        orders = merge_order_df(start=start, end=end)
+        print('orders')
+        
+        target_df = create_modified_active_time(orders)
+        target_df['target'] = target_df['ride_duration'] / target_df[
+            'modified_active_time_with_rules']
+        target_df.sort_values('driver_id', inplace=True)
+        
+        print('1e')
+        df_final = create_features(
+            start='2016-11-01', end='2016-11-30', use_cache=False)
+        print('1f')
+        spatial_df = get_spatial_features(orders)
+        print('spatial')
+        
+        df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+        df_final.sort_values('driver_id', inplace=True)
+        df_final.set_index('driver_id', inplace=True)
+        pd.to_msgpack(cache_path, df_final)
+    return df_final
 
 
-start = '2016-11-01'
-end = '2016-11-30'
-orders = merge_order_df(start=start, end=end)
-print('orders')
+df_final = get_final_df_reg()
 
-target_df = create_modified_active_time(orders)
-target_df['target'] = target_df['ride_duration'] / target_df[
-    'modified_active_time_with_rules']
-target_df.sort_values('driver_id', inplace=True)
-
-print('1e')
-df_final = create_features(
-    start='2016-11-01', end='2016-11-30', use_cache=False)
-print('1f')
-spatial_df = get_spatial_features(orders)
-print('spatial')
-
-df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
-##pd.to_msgpack(cache_path, df_final)
-##
-##df_final = pd.read_msgpack(cache_path)
-#df_final.sort_values('driver_id', inplace=True)
-#df_final.set_index('driver_id', inplace=True)
-#
 ##X = df_final.drop(columns=['num_total_rides'])
 #X = df_final
 #
