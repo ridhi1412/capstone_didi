@@ -10,7 +10,7 @@ from loader1 import read_data
 
 df_gps = read_data('gps', date='20161101', sample=1)
 df_order = read_data('order', date='20161101', sample=1)
-=======
+"""
 Created on Sun Oct  6 14:11:27 2019
 
 @author: rmahajan14
@@ -213,4 +213,3 @@ df_final = get_final_df_reg()
 #    orders = orders.merge(drivers, on='order_id', how='left')
 #    df = orders.loc[orders['driver_id'] == '025a8a42a4cd1d0ca336d4743e98fe64']
 #    df = orders.loc[orders['driver_id'] == '0009873b1084c284cc143db9d6cfdbf0']
->>>>>>> 9e312e1027e965a313dbbf343530904e7eb4ff80
