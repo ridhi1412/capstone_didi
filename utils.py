@@ -14,14 +14,8 @@ from common import CACHE_DIR
 
 
 def get_start_end_bins(df, cols):
-    #    date_curr = pd.to_datetime(date)
-    #    year = pd.to_datetime(date).year
-    #    month = pd.to_datetime(date).month
-    #    day = pd.to_datetime(date).day
-
     for col in cols:
         df[f'{col}_only_time'] = df[f'{col}'] - df[f'{col}'].dt.normalize()
-        #        breakpoint()
         df[f'{col}_bin'] = pd.qcut(df[f'{col}_only_time'], 4)
 
 
@@ -32,14 +26,6 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
         print(f'{cache_path} exists')
         temp = pd.read_msgpack(cache_path)
     else:
-        
-        #    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
-        #    if os.path.exists(cache_path):
-        #        print(f'{cache_path} exists')
-        #        df_new = pd.read_msgpack(cache_path)
-        #    else:
-        
-        #    breakpoint()
         pickup_coord = utm.from_latlon(df['pickup_latitude'].values, df['pickup_longitude'].values)
         col1, col2 = pickup_coord[0], pickup_coord[1]
         df['xpickup'] = col1
@@ -62,16 +48,7 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
             ['driver_id', 'pick_up_zone']).count() / df[[
                 'driver_id', 'pick_up_zone', 'pickup_latitude'
             ]].groupby(['driver_id'])[['pickup_latitude']].count()
-        #    breakpoint()
-        #    grouped_tmp = grouped_tmp[['dropoff_latitude']]
-    
-        #    df1 = grouped_tmp.unstack(level=1)
         temp = grouped_tmp.unstack(level=0).T
-        #    df1m = grouped_tmp.unstack(level=-1)
-    
-        #    (df.groupby(['driver_id', 'pick_up_zone']).count() / df.groupby(
-        #        ['driver_id']).count())
-    
         temp.fillna(0, inplace=True)
         temp.reset_index(inplace=True)
         temp.drop(columns=['level_0'], inplace=True)
