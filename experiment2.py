@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-<<<<<<< HEAD
 Created on Mon Sep 30 19:13:56 2019
 
 @author: rmahajan14
