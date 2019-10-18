@@ -5,9 +5,16 @@ Created on Fri Sep 27 11:26:39 2019
 @author: rmahajan14
 """
 import sys
+import os
 
-DATA_DIR = sys.argv[1]
-CACHE_DIR = sys.argv[2]
+path = ['../Capstone - Data', '../Ride_Data_Cache']
+
+if os.path.isdir(path[0]):
+    DATA_DIR = path[0]
+    CACHE_DIR = path[1]
+else:
+    DATA_DIR = sys.argv[1]
+    CACHE_DIR = sys.argv[2]
 
 # "P:\rmahajan14\capstone_data\data" "P:\rmahajan14\capstone_data\cache"
 
