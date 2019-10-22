@@ -71,8 +71,9 @@ def load_all(use_cache=True, override=False):
             if member.name.startswith('order'):
                 date_equality = pd.to_datetime(member.name[6:]).date()
             if os.path.exists(cache_path):
-                print(f'{cache_path} exists')
-                continue
+                if not override:
+                    print(f'{cache_path} exists')
+                    continue
             if member.name.startswith('gps'):
                 col_names = [
                     'driver_id', 'order_id', 'timestamp', 'longitude',
@@ -89,6 +90,7 @@ def load_all(use_cache=True, override=False):
             else:
                 sys.exit()
             f = tar.extractfile(member)
+            print('Processing the File ', cache_path)
             if f is not None:
                 df = pd.read_csv(f, header=None, names=col_names)
                 df.drop_duplicates(inplace=True)
