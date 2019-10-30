@@ -8,7 +8,8 @@ Created on Sun Oct  6 14:11:27 2019
 import os
 import datetime
 import pandas as pd
-from utils import get_start_end_bins, get_spatial_features, create_modified_active_time
+from utils import (get_start_end_bins, get_spatial_features,
+                   create_modified_active_time, create_modified_active_time_through_decay)
 from loader1 import read_data
 from common import CACHE_DIR
 from sklearn.model_selection import train_test_split
@@ -70,6 +71,10 @@ def merge_order_df(start='2016-11-01', end='2016-11-30',
             df_new_list += [order.copy()]
     
         orders = pd.concat(df_new_list, sort=False)
+        ##################################
+        # Removing orders where the ride duration is greater than 180 minutes
+        orders = orders[orders.ride_duration <= 180]
+        ##################################
         pd.to_msgpack(cache_path, orders)
         print(f'Dumping to {cache_path}')
     return orders
@@ -83,7 +88,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     cache_path = os.path.join(CACHE_DIR, f'features_orders.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
-        df_new = pd.read_msgpack(cache_path)
+        df_final = pd.read_msgpack(cache_path)
     else:
         orders = merge_order_df(start, end)
         pool_rides(orders)
@@ -140,20 +145,29 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 
     return df_final
 
+
 def get_final_df_reg(use_cache=True):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
-    if os.path.exists(cache_path) and use_cache:
+    cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
+    if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
         print(f'{cache_path} exists')
+        print(f'{cache_path_idle_time} exists')
         df_final = pd.read_msgpack(cache_path)
+        target_df = pd.read_msgpack(cache_path_idle_time)
     else:
         start = '2016-11-01'
         end = '2016-11-30'
         orders = merge_order_df(start=start, end=end)
         print('orders')
         
-        target_df = create_modified_active_time(orders)
+        # target_df = create_modified_active_time(orders)
+        # target_df['target'] = target_df['ride_duration'] / target_df[
+        #     'modified_active_time_with_rules']
+        # target_df.sort_values('driver_id', inplace=True)
+
+        target_df = create_modified_active_time_through_decay(orders)
         target_df['target'] = target_df['ride_duration'] / target_df[
-            'modified_active_time_with_rules']
+            'modified_active_time']
         target_df.sort_values('driver_id', inplace=True)
         
         print('1e')
@@ -164,13 +178,17 @@ def get_final_df_reg(use_cache=True):
         print('spatial')
         
         df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+        ##################################################
+        ### Adding inactive time as a feature
+        df_final = pd.merge(df_final, target_df[['driver_id', 'inactive_time']], on=['driver_id'], how='inner')
+        ##################################################
         df_final.sort_values('driver_id', inplace=True)
         df_final.set_index('driver_id', inplace=True)
         pd.to_msgpack(cache_path, df_final)
-    return df_final
+    return df_final, target_df
 
 
-df_final = get_final_df_reg()
+df_final, target_df = get_final_df_reg()
 
 ##X = df_final.drop(columns=['num_total_rides'])
 #X = df_final

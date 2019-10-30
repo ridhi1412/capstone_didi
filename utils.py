@@ -19,6 +19,18 @@ def get_start_end_bins(df, cols):
         df[f'{col}_bin'] = pd.qcut(df[f'{col}_only_time'], 4)
 
 
+def idle_time_est(t, tau, shape, size):
+    # sample from time diff distribution
+    t_s = tau + np.random.exponential(scale=shape, size=size)
+
+    indicator = t <= t_s
+    indicator = 1 - indicator
+    i_time = t - t_s
+    idle_time = indicator * i_time
+
+    return idle_time
+
+
 def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
                          use_cache=True):
     cache_path = os.path.join(CACHE_DIR, f'spatial_df.msgpack')
@@ -126,6 +138,83 @@ def create_modified_active_time(orders, use_cache=True):
         cols = [
             'driver_id', 'ride_duration', 'modified_active_time',
             'modified_active_time_with_rules'
+        ]
+
+        driver_stats_updated = driver_stats_updated[cols]
+        pd.to_msgpack(cache_path, driver_stats_updated)
+        print(f'Dumping to {cache_path}')
+
+    return driver_stats_updated
+
+
+def create_modified_active_time_through_decay(orders, use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        driver_stats_updated = pd.read_msgpack(cache_path)
+
+    else:
+        print("Creating the exponential decay")
+        driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
+            .drop_duplicates()
+        driver_start_times.sort_values(['driver_id', 'ride_start_timestamp'],
+                                       inplace=True)
+        driver_start_times['stop_time_shifted'] = driver_start_times.groupby(
+            'driver_id')['ride_stop_timestamp'].shift(1)
+        driver_start_times['diff'] = driver_start_times[
+            'ride_start_timestamp'] - driver_start_times['stop_time_shifted']
+
+        driver_start_times_no_na = driver_start_times.dropna()
+        driver_start_times_no_na['diff'] = driver_start_times_no_na['diff'].dt.total_seconds() / 60
+
+        mean_diff = driver_start_times_no_na['diff'].mean()
+        tau = driver_start_times_no_na['diff'].median()
+
+        lmbd = 1. / (mean_diff - tau)
+        shape = 1. / lmbd
+
+        size = driver_start_times_no_na.shape[0]
+        driver_start_times_no_na['inactive_time'] = idle_time_est(driver_start_times_no_na['diff'], tau, shape, size=size)
+
+
+        ##
+        driver_day_min = pd.DataFrame(
+            orders.groupby('driver_id')
+            ['ride_start_timestamp'].min()).reset_index()
+        driver_day_max = pd.DataFrame(
+            orders.groupby('driver_id')
+            ['ride_stop_timestamp'].max()).reset_index()
+        driver_active_time = driver_day_min.merge(
+            driver_day_max, on='driver_id', how='left')
+        driver_active_time['active_time'] = (
+            driver_active_time['ride_stop_timestamp'] -
+            driver_active_time['ride_start_timestamp']).dt.total_seconds() / 60
+        ##
+
+        ##
+        driver_ride_durations = orders.groupby('driver_id')[[
+            'ride_duration'
+        ]].sum().reset_index()
+        ##
+
+        ##
+        # total driver active time
+        driver_stats = driver_active_time[['driver_id', 'active_time']].merge(
+            driver_ride_durations, on='driver_id', how='left')
+
+        ##
+        total_inactive_time = driver_start_times_no_na.groupby(
+            'driver_id')['inactive_time'].sum().reset_index()
+        ##
+        driver_stats_updated = driver_stats.merge(
+            total_inactive_time[['driver_id', 'inactive_time']],
+            on='driver_id',
+            how='left').fillna(0)
+        driver_stats_updated['modified_active_time'] = driver_stats_updated[
+            'active_time'] - driver_stats_updated['inactive_time']
+
+        cols = [
+            'driver_id', 'ride_duration', 'modified_active_time', 'inactive_time'
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
