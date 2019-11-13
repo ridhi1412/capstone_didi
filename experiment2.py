@@ -9,13 +9,16 @@ import os
 import datetime
 import pandas as pd
 from utils import (get_start_end_bins, get_spatial_features,
-                   create_modified_active_time, create_modified_active_time_through_decay)
+                   create_modified_active_time, create_modified_active_time_through_decay,
+                   create_modified_active_time_through_decay2)
 from loader1 import read_data
 from common import CACHE_DIR
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
+import time
+
 
 #date_str_list = ['20161128', '20161129', '20161130']
 #order = read_data('order', date='20161130', sample=1)
@@ -146,7 +149,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     return df_final
 
 
-def get_final_df_reg(use_cache=True):
+def get_final_df_reg(use_cache=True, decay='New Decay', mult_factor=1, add_idle_time=False):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
     cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
     if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
@@ -159,28 +162,49 @@ def get_final_df_reg(use_cache=True):
         end = '2016-11-30'
         orders = merge_order_df(start=start, end=end)
         print('orders')
-        
-        # target_df = create_modified_active_time(orders)
-        # target_df['target'] = target_df['ride_duration'] / target_df[
-        #     'modified_active_time_with_rules']
-        # target_df.sort_values('driver_id', inplace=True)
 
-        target_df = create_modified_active_time_through_decay(orders)
-        target_df['target'] = target_df['ride_duration'] / target_df[
-            'modified_active_time']
-        target_df.sort_values('driver_id', inplace=True)
-        
+        t1 = time.time()
+        print('Decay Calculation')
+        if decay == 'No Decay':
+            print("No Decay")
+            target_df = create_modified_active_time(orders)
+            target_df['target'] = target_df['ride_duration'] / target_df[
+                'modified_active_time_with_rules']
+            target_df.sort_values('driver_id', inplace=True)
+        elif decay == 'Old Decay':
+            print("Old Decay")
+            target_df = create_modified_active_time_through_decay(orders)
+            target_df['target'] = target_df['ride_duration'] / target_df[
+                'modified_active_time']
+            target_df.sort_values('driver_id', inplace=True)
+        elif decay == 'New Decay':
+            print("New Decay")
+            target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor)
+            target_df['target'] = target_df['ride_duration'] / target_df[
+                'modified_active_time']
+            target_df.sort_values('driver_id', inplace=True)
+        else:
+            raise NotImplementedError('Decay can only take 3 values')
+
+        print(f"Decay Calculation done in {time.time() - t1}")
+
+
         print('1e')
+        t1 = time.time()
         df_final = create_features(
-            start='2016-11-01', end='2016-11-30', use_cache=False)
+            start='2016-11-01', end='2016-11-30', use_cache=True)
+        print(f"Features created in {time.time() - t1}")
+        t1=time.time()
         print('1f')
         spatial_df = get_spatial_features(orders)
         print('spatial')
+        print(f"Spatial Calculation done in {time.time() - t1}")
         
         df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
         ##################################################
         ### Adding inactive time as a feature
-        df_final = pd.merge(df_final, target_df[['driver_id', 'inactive_time']], on=['driver_id'], how='inner')
+        if decay != 'No Decay':
+            df_final = pd.merge(df_final, target_df[['driver_id', 'inactive_time']], on=['driver_id'], how='inner')
         ##################################################
         df_final.sort_values('driver_id', inplace=True)
         df_final.set_index('driver_id', inplace=True)
