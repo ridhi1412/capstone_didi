@@ -4,13 +4,18 @@ Created on Fri Sep 27 11:28:24 2019
 
 @author: aksmit94
 """
+#!pip install folium
+#!pip install utm
 
 import pandas as pd
 import utm
 import os
 import numpy as np
 
+from h3 import h3
 from common import CACHE_DIR
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
 
 
 def get_start_end_bins(df, cols):
@@ -42,20 +47,20 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
         col1, col2 = pickup_coord[0], pickup_coord[1]
         df['xpickup'] = col1
         df['ypickup'] = col2
-        
+
         dropoff_coord = utm.from_latlon(df['dropoff_latitude'].values, df['dropoff_longitude'].values)
         col3, col4 = dropoff_coord[0], dropoff_coord[1]
         df['xdropoff'] = col3
         df['ydropoff'] = col4
-        
+
         tempx = pd.cut(df['xpickup'], bins=grid_x_num).astype(str)
         tempy = pd.cut(df['ypickup'], bins=grid_y_num).astype(str)
         df['pick_up_zone'] = tempx + tempy
-    
+
         tempx = pd.cut(df['xdropoff'], bins=grid_x_num).astype(str)
         tempy = pd.cut(df['ydropoff'], bins=grid_y_num).astype(str)
         df['drop_off_zone'] = tempx + tempy
-    
+
         grouped_tmp = df[['driver_id', 'pick_up_zone', 'pickup_latitude']].groupby(
             ['driver_id', 'pick_up_zone']).count() / df[[
                 'driver_id', 'pick_up_zone', 'pickup_latitude'
@@ -67,6 +72,60 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
         pd.to_msgpack(cache_path, temp)
         print(f'Dumping to {cache_path}')
     return temp
+
+def get_spatial_features_hex(df, resolution =6, use_cache=True):
+
+    cache_path = os.path.join(CACHE_DIR, f'spatial_df.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        temp = pd.read_msgpack(cache_path)
+    else:
+        minlat  = min(df.pickup_latitude)
+        minlong = min(df.pickup_longitude)
+        maxlat  = max(df.pickup_latitude)
+        maxlong = max(df.pickup_longitude)
+        geoJson = {'type': 'Polygon',
+                      'coordinates': [[[minlat, minlong], [minlat, maxlong ], [maxlat, maxlong], [ maxlat, minlong ]]] }
+
+        hexagons = list(h3.polyfill(geoJson, resolution))
+
+        xy_pickup = utm.from_latlon(df.pickup_latitude.values,df.pickup_longitude.values)
+        x_pickup = list(xy_pickup[0])
+        y_pickup = list(xy_pickup[1])
+        pickup_point = list(zip(x_pickup, y_pickup))
+
+        poly_hex = dict()
+        for i,hex in enumerate(hexagons):
+            polygons = h3.h3_set_to_multi_polygon([hex], geo_json=False)
+            a= np.array(polygons[0][0])
+            b = utm.from_latlon(a[:,0],a[:,1])
+            poly_hex[i] = list(zip(b[0], b[1]))
+
+        pick_zone = np.zeros(len(order_data))-1
+        for j,p in enumerate(pickup_point):
+            point = Point(p)
+            for i in range(len(poly_hex)):
+                polygon = Polygon(poly_hex[i])
+                if polygon.contains(point):
+                    pick_zone[j] = int(i)
+                    break
+
+        df['pickup_zone'] = pick_zone
+
+        grouped_tmp = df[['driver_id', 'pickup_zone', 'pickup_latitude']].groupby(
+            ['driver_id', 'pickup_zone']).count() / df[[
+                'driver_id', 'pickup_zone', 'pickup_latitude'
+            ]].groupby(['driver_id'])[['pickup_latitude']].count()
+
+        temp = grouped_tmp.unstack(level=0).T
+        temp.fillna(0, inplace=True)
+        temp.reset_index(inplace=True)
+        temp.drop(columns=['level_0'], inplace=True)
+        pd.to_msgpack(cache_path, temp)
+        print(f'Dumping to {cache_path}')
+
+    return temp
+
 
 
 def create_modified_active_time(orders, use_cache=True):
