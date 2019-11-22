@@ -83,6 +83,62 @@ def merge_order_df(start='2016-11-01', end='2016-11-30',
     return orders
 
 
+def unstack_func(grouped_df):
+    temp1 = grouped_df.unstack(level=0)
+    temp1.fillna(0, inplace=True)
+    #        breakpoint()
+    temp1.reset_index(inplace=True)
+    temp1 = temp1.T
+    temp1.reset_index(inplace=True)
+
+    cols = temp1.iloc[0]
+    temp1 = temp1.loc[1:]
+    temp1.columns = cols
+    
+    print('b')
+    
+    temp1.rename(columns={'': 'driver_id'}, inplace=True)
+    temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
+    new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
+    temp1.columns = new_cols
+    return temp1
+
+def groupby_1_count(orders, use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'groupby1.msgpack')
+    if use_cache and os.path.exists(cache_path):
+        temp1 = pd.read_msgpack(cache_path)
+        print(f'Loading from {cache_path}')
+    else:
+        grouped_tmp = orders[[
+            'driver_id', 'ride_start_timestamp_bin', 'order_id'
+        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
+                    ]).count() / orders[[
+                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
+                    ]].groupby(['driver_id'])[['order_id']].count()
+        temp1 = unstack_func(grouped_tmp)
+        pd.to_msgpack(cache_path, temp1)
+        print(f'Dumping to {cache_path}')
+    return temp1
+
+def groupby_2_sum(orders, use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'groupby2.msgpack')
+    if use_cache and os.path.exists(cache_path):
+        temp2 = pd.read_msgpack(cache_path)
+        print(f'Loading from {cache_path}')
+    else:
+        grouped_tmp_perc_active = orders[[
+            'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
+        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
+                    ])[['ride_duration']].sum() / orders[[
+                        'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
+                    ]].groupby(['driver_id'])[['ride_duration']].sum()
+        temp2 = unstack_func(grouped_tmp_perc_active)
+        pd.to_msgpack(cache_path, temp2)
+        print(f'Dumping to {cache_path}')
+    return temp2
+
+
+
 def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     """
     Add all features
@@ -101,30 +157,32 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         #        breakpoint()
 
         print('a')
-        grouped_tmp = orders[[
-            'driver_id', 'ride_start_timestamp_bin', 'order_id'
-        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
-                    ]).count() / orders[[
-                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
-                    ]].groupby(['driver_id'])[['order_id']].count()
-
-        temp1 = grouped_tmp.unstack(level=0)
-        temp1.fillna(0, inplace=True)
-        #        breakpoint()
-        temp1.reset_index(inplace=True)
-        temp1 = temp1.T
-        temp1.reset_index(inplace=True)
-
-        cols = temp1.iloc[0]
-        temp1 = temp1.loc[1:]
-        temp1.columns = cols
+        import time
+        a = time.time()
+        temp1 = groupby_1_count(orders, use_cache=True)
         
-        print('b')
+        temp2 = groupby_2_sum(orders, use_cache=True)
+#        orders[[
+#            'driver_id', 'ride_start_timestamp_bin', 'order_id'
+#        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
+#                    ]).count() / orders[[
+#                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
+#                    ]].groupby(['driver_id'])[['order_id']].count()
         
-        temp1.rename(columns={'': 'driver_id'}, inplace=True)
-        temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
-        new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
-        temp1.columns = new_cols
+        print(time.time() - a)
+        
+#        grouped_tmp_perc_active = orders[[
+#            'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
+#        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
+#                    ])[['ride_duration']].sum() / orders[[
+#                        'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
+#                    ]].groupby(['driver_id'])[['ride_duration']].sum()
+        
+#        breakpoint()
+
+#        temp1 = unstack_func(grouped_tmp)
+#        temp2 = unstack_func(grouped_tmp_perc_active)
+        
         df_new = orders.groupby(['driver_id']).agg({
             'order_id': 'count',
             'is_pool': 'sum'
@@ -145,11 +203,15 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         print(f'Dumping to {cache_path}')
 #        breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
+        
+        #TODO check
+#        breakpoint()
+        df_final = pd.merge(df_final, temp2, on=['driver_id'], how='inner', suffixes=('_count', '_sum'))
 
     return df_final
 
 
-def get_final_df_reg(use_cache=True, decay='New Decay', mult_factor=1, add_idle_time=False):
+def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle_time=False):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
     cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
     if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
@@ -192,7 +254,8 @@ def get_final_df_reg(use_cache=True, decay='New Decay', mult_factor=1, add_idle_
         print('1e')
         t1 = time.time()
         df_final = create_features(
-            start='2016-11-01', end='2016-11-30', use_cache=True)
+            start='2016-11-01', end='2016-11-30', use_cache=False)
+        #TODO change to True
         print(f"Features created in {time.time() - t1}")
         t1=time.time()
         print('1f')
@@ -212,7 +275,7 @@ def get_final_df_reg(use_cache=True, decay='New Decay', mult_factor=1, add_idle_
     return df_final, target_df
 
 
-df_final, target_df = get_final_df_reg()
+df_final, target_df = get_final_df_reg(use_cache=False)
 
 ##X = df_final.drop(columns=['num_total_rides'])
 #X = df_final
