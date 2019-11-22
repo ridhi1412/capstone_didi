@@ -31,6 +31,18 @@ def idle_time_est(t, tau, shape):
     return idle_time
 
 
+def idle_time_est_old(t, tau, shape, size):
+    # sample from time diff distribution
+    t_s = tau + np.random.exponential(scale=shape, size=size)
+
+    indicator = t <= t_s
+    indicator = 1 - indicator
+    i_time = t - t_s
+    idle_time = indicator * i_time
+
+    return idle_time
+
+
 def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
                          use_cache=True):
     cache_path = os.path.join(CACHE_DIR, f'spatial_df.msgpack')
@@ -148,7 +160,7 @@ def create_modified_active_time(orders, use_cache=True):
 
 
 def create_modified_active_time_through_decay(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times.msgpack')
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_old.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
@@ -174,7 +186,7 @@ def create_modified_active_time_through_decay(orders, use_cache=True):
         shape = 1. / lmbd
 
         size = driver_start_times_no_na.shape[0]
-        driver_start_times_no_na['inactive_time'] = idle_time_est(driver_start_times_no_na['diff'], tau, shape, size=size)
+        driver_start_times_no_na['inactive_time'] = idle_time_est_old(driver_start_times_no_na['diff'], tau, shape, size=size)
 
 
         ##
@@ -224,8 +236,8 @@ def create_modified_active_time_through_decay(orders, use_cache=True):
     return driver_stats_updated
 
 
-def create_modified_active_time_through_decay2(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times.msgpack')
+def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_new_{mult_factor}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
@@ -281,7 +293,7 @@ def create_modified_active_time_through_decay2(orders, use_cache=True):
         # Find lambda for entire df
         driver_start_times_no_na['lmbd'] = gaus(driver_start_times_no_na['total_hour'], *popt)
 
-        shape = 1. / driver_start_times_no_na['lmbd'].values
+        shape = 1. / (mult_factor*driver_start_times_no_na['lmbd'].values) #TODO revise
 
         driver_start_times_no_na['inactive_time'] = idle_time_est(driver_start_times_no_na['diff'], tau, shape)
 
