@@ -199,7 +199,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
         print('d')
-        pd.to_msgpack(cache_path, df_new)
+        
         print(f'Dumping to {cache_path}')
 #        breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
@@ -207,7 +207,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         #TODO check
 #        breakpoint()
         df_final = pd.merge(df_final, temp2, on=['driver_id'], how='inner', suffixes=('_count', '_sum'))
-
+        pd.to_msgpack(cache_path, df_final)
     return df_final
 
 
@@ -254,8 +254,9 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         print('1e')
         t1 = time.time()
         df_final = create_features(
-            start='2016-11-01', end='2016-11-30', use_cache=False)
+            start='2016-11-01', end='2016-11-30', use_cache=True)
         #TODO change to True
+#        breakpoint()
         print(f"Features created in {time.time() - t1}")
         t1=time.time()
         print('1f')
@@ -275,7 +276,8 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
     return df_final, target_df
 
 
-df_final, target_df = get_final_df_reg(use_cache=False)
+if __name__ == '__main__':
+    df_final, target_df = get_final_df_reg(use_cache=False)
 
 ##X = df_final.drop(columns=['num_total_rides'])
 #X = df_final
