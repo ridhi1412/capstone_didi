@@ -7,7 +7,7 @@ Created on Fri Sep 27 11:26:39 2019
 import sys
 import os
 
-path = ['../Capstone - Data', '../Ride_Data_Cache']
+path = [r'C:\Users\NiFa\Desktop\Data_Science\CapStone\data\data', r'C:\Users\NiFa\Desktop\Data_Science\CapStone\data\Ride_Data_Cache']
 
 if os.path.isdir(path[0]):
     DATA_DIR = path[0]

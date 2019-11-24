@@ -87,7 +87,7 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
 
 def get_spatial_features_hex(df, resolution =6, use_cache=True):
 
-    cache_path = os.path.join(CACHE_DIR, f'spatial_df.msgpack')
+    cache_path = os.path.join(CACHE_DIR, f'hex_spatial_df.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         temp = pd.read_msgpack(cache_path)
@@ -113,7 +113,7 @@ def get_spatial_features_hex(df, resolution =6, use_cache=True):
             b = utm.from_latlon(a[:,0],a[:,1])
             poly_hex[i] = list(zip(b[0], b[1]))
 
-        pick_zone = np.zeros(len(order_data))-1
+        pick_zone = np.zeros(len(df))-1
         for j,p in enumerate(pickup_point):
             point = Point(p)
             for i in range(len(poly_hex)):

@@ -8,7 +8,7 @@ Created on Sun Oct  6 14:11:27 2019
 import os
 import datetime
 import pandas as pd
-from utils import (get_start_end_bins, get_spatial_features,
+from utils import (get_start_end_bins, get_spatial_features, get_spatial_features_hex,
                    create_modified_active_time, create_modified_active_time_through_decay,
                    create_modified_active_time_through_decay2)
 from loader1 import read_data
@@ -64,15 +64,15 @@ def merge_order_df(start='2016-11-01', end='2016-11-30',
         print(f'{cache_path} exists')
         orders = pd.read_msgpack(cache_path)
     else:
-        
+
         df_new_list = []
 
         date_str_list = get_date_list(start=start, end=end)
-    
+
         for date in date_str_list:
             order = read_data('order', date=date, sample=1)
             df_new_list += [order.copy()]
-    
+
         orders = pd.concat(df_new_list, sort=False)
         ##################################
         # Removing orders where the ride duration is greater than 180 minutes
@@ -94,9 +94,9 @@ def unstack_func(grouped_df):
     cols = temp1.iloc[0]
     temp1 = temp1.loc[1:]
     temp1.columns = cols
-    
+
     print('b')
-    
+
     temp1.rename(columns={'': 'driver_id'}, inplace=True)
     temp1.drop(columns=['ride_start_timestamp_bin'], inplace=True)
     new_cols = [temp1.columns[0]] + [str(x) for x in temp1.columns[1:]]
@@ -160,7 +160,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         import time
         a = time.time()
         temp1 = groupby_1_count(orders, use_cache=True)
-        
+
         temp2 = groupby_2_sum(orders, use_cache=True)
 #        orders[[
 #            'driver_id', 'ride_start_timestamp_bin', 'order_id'
@@ -168,26 +168,26 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
 #                    ]).count() / orders[[
 #                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
 #                    ]].groupby(['driver_id'])[['order_id']].count()
-        
+
         print(time.time() - a)
-        
+
 #        grouped_tmp_perc_active = orders[[
 #            'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
 #        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
 #                    ])[['ride_duration']].sum() / orders[[
 #                        'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
 #                    ]].groupby(['driver_id'])[['ride_duration']].sum()
-        
+
 #        breakpoint()
 
 #        temp1 = unstack_func(grouped_tmp)
 #        temp2 = unstack_func(grouped_tmp_perc_active)
-        
+
         df_new = orders.groupby(['driver_id']).agg({
             'order_id': 'count',
             'is_pool': 'sum'
         }).reset_index()
-        
+
         print('c')
         df_new.rename(
             columns={
@@ -199,11 +199,11 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         df_new['% of pool rides'] = (
             df_new['num_pool_rides'] / df_new['num_total_rides'])
         print('d')
-        
+
         print(f'Dumping to {cache_path}')
 #        breakpoint()
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
-        
+
         #TODO check
 #        breakpoint()
         df_final = pd.merge(df_final, temp2, on=['driver_id'], how='inner', suffixes=('_count', '_sum'))
@@ -260,10 +260,10 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         print(f"Features created in {time.time() - t1}")
         t1=time.time()
         print('1f')
-        spatial_df = get_spatial_features(orders)
+        spatial_df = get_spatial_features_hex(orders, resolution = 5)
         print('spatial')
         print(f"Spatial Calculation done in {time.time() - t1}")
-        
+
         df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
         ##################################################
         ### Adding inactive time as a feature
