@@ -260,7 +260,7 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         print(f"Features created in {time.time() - t1}")
         t1=time.time()
         print('1f')
-        spatial_df = get_spatial_features_hex(orders, resolution = 5)
+        spatial_df = get_spatial_features_hex(orders, resolution=6)
         print('spatial')
         print(f"Spatial Calculation done in {time.time() - t1}")
 
