@@ -229,7 +229,7 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
     else:
         start = '2016-11-01'
         end = '2016-11-30'
-        orders = merge_order_df(start=start, end=end)
+        orders = merge_order_df(start=start, end=end, use_cache=True)
         print('orders')
 
         t1 = time.time()
@@ -251,13 +251,13 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
             target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
-            target_df.sort_values('driver_id', inplace=True)
+            target_df.sort_values('driver_id', inplace=False)
         elif decay == 'Survival':
             print("Survival")
-            target_df = get_surv_prob(orders)
+            target_df = get_surv_prob(orders, use_cache=False)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'survival_active_time']
-            target_df.sort_values('driver_id', inplace=True)
+            target_df.sort_values('driver_id', inplace=False)
         else:
             raise NotImplementedError('Decay can only take 4 values')
 
@@ -273,11 +273,13 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         t1 = time.time()
         print('1f')
         if spatial_type.lower() == 'radial':
-            spatial_df = get_spatial_features_radial(orders)
+            spatial_df = get_spatial_features_radial(orders, use_cache=True)
         elif spatial_type.lower() == 'grid':
-            spatial_df = get_spatial_features(orders)
+            spatial_df = get_spatial_features(orders, use_cache=True)
+        elif spatial_type.lower() == 'hex':
+            spatial_df = get_spatial_features_hex(orders, use_cache=True)
         elif spatial_type.lower() == 'both':
-            spatial_df_radial = get_spatial_features_radial(orders)
+            spatial_df_radial = get_spatial_features_radial(orders, use_cache=True)
             spatial_df_grid = get_spatial_features(orders)
             spatial_df = pd.merge(spatial_df_grid, spatial_df_radial, on='driver_id')
         else:

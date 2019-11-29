@@ -52,7 +52,10 @@ def idle_time_est_old(t, tau, shape, size):
 
 
 def get_inv_cdf(x, c, x0=10):
-    val = np.exp(c*(1-x))
+    norm_value = c/np.log(1+np.exp(c*x0))
+    updated_c = c/norm_value
+    # val = np.exp(c*(1-x))
+    val = np.exp(updated_c*(1-x))
     inv_y = (np.log(val / (1 + np.exp(c*x0) - val)) / c) + x0
     return inv_y
 
@@ -62,6 +65,7 @@ def get_surv_prob(orders, c=1, use_cache=True):
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
+        return driver_stats_updated
 
     else:
         print("Creating the Survival Functions")
@@ -82,7 +86,24 @@ def get_surv_prob(orders, c=1, use_cache=True):
 
         rand_val = np.random.random(size=len(driver_start_times_no_na))
         driver_start_times_no_na['survival_active_time'] = get_inv_cdf(rand_val, c)
-        driver_start_times_no_na['survival_active_time'] = np.minimum(driver_start_times_no_na['diff'], driver_start_times_no_na['survival_active_time'])
+        driver_start_times_no_na['survival_active_time'] = np.minimum(np.maximum(driver_start_times_no_na['diff'], 0),
+                                                                      driver_start_times_no_na['survival_active_time'])
+
+
+        """
+        When ride difference is negative, we are getting values where survival time is negative which reduces the sum, 
+        So if the ride difference is negative, that would imply overlapping rides which would mean mean the driver 
+        is active on the system for this ride, so we would have counted that ride for the pool and will take this 
+        as 0  
+        """
+
+        """
+        Our survival active time only considers the time the driver was active in between rides, it does not take 
+        into account the those times into account when the driver was using in a ride. So our actual active time 
+        will be the sum of the ride duration and the survival active time 
+        
+        So note this correction 
+        """
 
         driver_day_min = pd.DataFrame(
             orders.groupby('driver_id')
@@ -117,7 +138,14 @@ def get_surv_prob(orders, c=1, use_cache=True):
         driver_stats_updated = driver_stats.merge(
             total_active_time[['driver_id', 'survival_active_time']],
             on='driver_id',
-            how='left').fillna(0)
+            how='left')
+
+        driver_stats_updated.loc[(pd.isnull(driver_stats_updated.survival_active_time)),
+                                 'survival_active_time'] = driver_stats_updated.active_time
+
+        driver_stats_updated['survival_active_time'] = driver_stats_updated['survival_active_time'] + \
+                                                       driver_stats_updated['ride_duration']
+
         driver_stats_updated['inactive_time'] = driver_stats_updated[
                                                            'active_time'] - \
                                                        driver_stats_updated[
