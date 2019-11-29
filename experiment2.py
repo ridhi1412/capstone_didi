@@ -8,9 +8,10 @@ Created on Sun Oct  6 14:11:27 2019
 import os
 import datetime
 import pandas as pd
+import numpy as np
 from utils import (get_start_end_bins, get_spatial_features, get_spatial_features_hex,
                    create_modified_active_time, create_modified_active_time_through_decay,
-                   create_modified_active_time_through_decay2)
+                   create_modified_active_time_through_decay2, get_spatial_features_radial, get_surv_prob)
 from loader1 import read_data
 from common import CACHE_DIR
 from sklearn.model_selection import train_test_split
@@ -18,11 +19,6 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 import time
-
-
-#date_str_list = ['20161128', '20161129', '20161130']
-#order = read_data('order', date='20161130', sample=1)
-#order.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
 
 
 def get_date_list(start='2016-11-01', end='2016-11-30'):
@@ -84,6 +80,12 @@ def merge_order_df(start='2016-11-01', end='2016-11-30',
 
 
 def unstack_func(grouped_df):
+    """
+    Transposes grouped table by making groups as columns
+    :param grouped_df: pandas grouped dataframe
+    :return: pandas dataframe with groups as columns
+    """
+
     temp1 = grouped_df.unstack(level=0)
     temp1.fillna(0, inplace=True)
     #        breakpoint()
@@ -103,7 +105,19 @@ def unstack_func(grouped_df):
     temp1.columns = new_cols
     return temp1
 
-def groupby_1_count(orders, use_cache=True):
+
+def groupby_1_count(orders, use_cache=True, use_radial=False):
+    """
+    Grouping to get number of rides of a driver in each time bin
+    :param orders: Orders dataframe with time bin columns
+    :param use_cache: Use previous cache or not
+    :return: Grouped pandas dataframe
+    """
+    if use_radial:
+        group_col = 'pick_up_radial_zone'
+    else:
+        group_col = 'ride_start_timestamp_bin'
+
     cache_path = os.path.join(CACHE_DIR, f'groupby1.msgpack')
     if use_cache and os.path.exists(cache_path):
         temp1 = pd.read_msgpack(cache_path)
@@ -120,7 +134,14 @@ def groupby_1_count(orders, use_cache=True):
         print(f'Dumping to {cache_path}')
     return temp1
 
+
 def groupby_2_sum(orders, use_cache=True):
+    """
+    Grouping to get sum of ride durations of a driver in each time bin
+    :param orders: Orders dataframe with time bin columns
+    :param use_cache: Use previous cache or not
+    :return: Grouped pandas dataframe
+    """
     cache_path = os.path.join(CACHE_DIR, f'groupby2.msgpack')
     if use_cache and os.path.exists(cache_path):
         temp2 = pd.read_msgpack(cache_path)
@@ -138,10 +159,13 @@ def groupby_2_sum(orders, use_cache=True):
     return temp2
 
 
-
 def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     """
-    Add all features
+    Creates all features going into the linear model
+    :param start: Start date of rides
+    :param end: End date of rides
+    :param use_cache: Use existing cache
+    :return: Returns df with all features
     """
 
     cache_path = os.path.join(CACHE_DIR, f'features_orders.msgpack')
@@ -149,7 +173,7 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         print(f'{cache_path} exists')
         df_final = pd.read_msgpack(cache_path)
     else:
-        orders = merge_order_df(start, end)
+        orders = merge_order_df(start, end, use_cache=True)
         pool_rides(orders)
         get_start_end_bins(orders,
                            ['ride_start_timestamp', 'ride_stop_timestamp'])
@@ -162,26 +186,8 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         temp1 = groupby_1_count(orders, use_cache=True)
 
         temp2 = groupby_2_sum(orders, use_cache=True)
-#        orders[[
-#            'driver_id', 'ride_start_timestamp_bin', 'order_id'
-#        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
-#                    ]).count() / orders[[
-#                        'driver_id', 'ride_start_timestamp_bin', 'order_id'
-#                    ]].groupby(['driver_id'])[['order_id']].count()
 
         print(time.time() - a)
-
-#        grouped_tmp_perc_active = orders[[
-#            'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
-#        ]].groupby(['driver_id', 'ride_start_timestamp_bin'
-#                    ])[['ride_duration']].sum() / orders[[
-#                        'driver_id', 'ride_start_timestamp_bin', 'ride_duration'
-#                    ]].groupby(['driver_id'])[['ride_duration']].sum()
-
-#        breakpoint()
-
-#        temp1 = unstack_func(grouped_tmp)
-#        temp2 = unstack_func(grouped_tmp_perc_active)
 
         df_new = orders.groupby(['driver_id']).agg({
             'order_id': 'count',
@@ -201,20 +207,21 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         print('d')
 
         print(f'Dumping to {cache_path}')
-#        breakpoint()
+
         df_final = pd.merge(df_new, temp1, on=['driver_id'], how='inner')
 
-        #TODO check
-#        breakpoint()
+        # TODO check
+
         df_final = pd.merge(df_final, temp2, on=['driver_id'], how='inner', suffixes=('_count', '_sum'))
         pd.to_msgpack(cache_path, df_final)
     return df_final
 
 
-def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle_time=False):
+def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle_time=False, use_radial_features=False, spatial_type='grid'):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
     cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
-    if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
+    # if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
+    if False:
         print(f'{cache_path} exists')
         print(f'{cache_path_idle_time} exists')
         df_final = pd.read_msgpack(cache_path)
@@ -229,77 +236,100 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         print('Decay Calculation')
         if decay == 'No Decay':
             print("No Decay")
-            target_df = create_modified_active_time(orders)
+            target_df = create_modified_active_time(orders, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time_with_rules']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Old Decay':
             print("Old Decay")
-            target_df = create_modified_active_time_through_decay(orders)
+            target_df = create_modified_active_time_through_decay(orders, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'New Decay':
             print("New Decay")
-            target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor)
+            target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
+        elif decay == 'Survival':
+            print("Survival")
+            target_df = get_surv_prob(orders)
+            target_df['target'] = target_df['ride_duration'] / target_df[
+                'survival_active_time']
+            target_df.sort_values('driver_id', inplace=True)
         else:
-            raise NotImplementedError('Decay can only take 3 values')
+            raise NotImplementedError('Decay can only take 4 values')
 
         print(f"Decay Calculation done in {time.time() - t1}")
-
 
         print('1e')
         t1 = time.time()
         df_final = create_features(
             start='2016-11-01', end='2016-11-30', use_cache=True)
-        #TODO change to True
-#        breakpoint()
+        # TODO change to True
+
         print(f"Features created in {time.time() - t1}")
-        t1=time.time()
+        t1 = time.time()
         print('1f')
-        spatial_df = get_spatial_features_hex(orders, resolution=6)
+        if spatial_type.lower() == 'radial':
+            spatial_df = get_spatial_features_radial(orders)
+        elif spatial_type.lower() == 'grid':
+            spatial_df = get_spatial_features(orders)
+        elif spatial_type.lower() == 'both':
+            spatial_df_radial = get_spatial_features_radial(orders)
+            spatial_df_grid = get_spatial_features(orders)
+            spatial_df = pd.merge(spatial_df_grid, spatial_df_radial, on='driver_id')
+        else:
+            raise NotImplementedError()
+
         print('spatial')
         print(f"Spatial Calculation done in {time.time() - t1}")
 
         df_final = pd.merge(df_final, spatial_df, on=['driver_id'], how='inner')
+
         ##################################################
         ### Adding inactive time as a feature
         if decay != 'No Decay':
             df_final = pd.merge(df_final, target_df[['driver_id', 'inactive_time']], on=['driver_id'], how='inner')
         ##################################################
+
         df_final.sort_values('driver_id', inplace=True)
         df_final.set_index('driver_id', inplace=True)
         pd.to_msgpack(cache_path, df_final)
     return df_final, target_df
 
 
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
+
 if __name__ == '__main__':
     df_final, target_df = get_final_df_reg(use_cache=False)
 
-##X = df_final.drop(columns=['num_total_rides'])
-#X = df_final
+# #X = df_final.drop(columns=['num_total_rides'])
+# X = df_final
 #
-#xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
+# xtrain, xtest, ytrain, ytest = train_test_split(X, target_df['target'])
 #
-#sc = StandardScaler()
-#xtrain_sc = sc.fit_transform(xtrain)
+# sc = StandardScaler()
+# xtrain_sc = sc.fit_transform(xtrain)
 #
-#rr = RandomForestRegressor()
-#rr.fit(xtrain_sc, ytrain)
-#rr.fit(xtrain_sc, ytrain)
+# rr = RandomForestRegressor()
+# rr.fit(xtrain_sc, ytrain)
+# rr.fit(xtrain_sc, ytrain)
 #
-##print(rr.coef_)
-#print(rr.score(xtrain_sc, ytrain))
+# #print(rr.coef_)
+# print(rr.score(xtrain_sc, ytrain))
 
-#TODO think
-#temp_in = temp.reset_index()
-#temp_in = temp_in.drop(columns=['level_0'])
-#temp_str = temp_in.drop_duplicates()
-#len(list(temp_in['driver_id'].unique()))
-#aa= temp_str.loc[temp_str['driver_id'] == '0000131d486b69eb77ab6e9e7cca9f4c'].T
+# TODO think
+# temp_in = temp.reset_index()
+# temp_in = temp_in.drop(columns=['level_0'])
+# temp_str = temp_in.drop_duplicates()
+# len(list(temp_in['driver_id'].unique()))
+# aa= temp_str.loc[temp_str['driver_id'] == '0000131d486b69eb77ab6e9e7cca9f4c'].T
 
 #    get_start_end_bins(df_new, date,
 #                   ['ride_start_timestamp', 'ride_stop_timestamp'])

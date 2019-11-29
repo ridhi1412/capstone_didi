@@ -114,11 +114,6 @@ def load_all(use_cache=True, override=False):
         i += 1
 
 
-def load_processed_dfs():
-    pass
-
-
-# todo incorporate multi-date file reads?
 def read_data(data_type, date='20161101', sample=1):
     """
     Reads in data from cached messagepacks stored locally
