@@ -12,7 +12,11 @@ import pandas as pd
 import utm
 import os
 import numpy as np
+
 import matplotlib.pyplot as plt
+
+import time
+
 
 from h3 import h3
 from common import (CACHE_DIR, X_CENTER, Y_CENTER,
@@ -262,7 +266,6 @@ def get_spatial_features_hex(df, resolution=6, use_cache=True):
                 if polygon.contains(point):
                     pick_zone[j] = int(i)
                     break
-
         df['pickup_zone'] = pick_zone
 
         grouped_tmp = df[['driver_id', 'pickup_zone', 'pickup_latitude']].groupby(
