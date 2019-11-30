@@ -50,12 +50,14 @@ def pool_rides(orders):
 
 
 def merge_order_df(start='2016-11-01', end='2016-11-30',
-                   use_cache=True):
+                   use_cache=True, remove_pool=False):
     """
     Concatenate order dataframes for given dates
     """
-
-    cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
+    if remove_pool:
+        cache_path = os.path.join(CACHE_DIR, f'merged_orders_no_pool.msgpack')
+    else:
+        cache_path = os.path.join(CACHE_DIR, f'merged_orders.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         orders = pd.read_msgpack(cache_path)
@@ -251,13 +253,13 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
             target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
-            target_df.sort_values('driver_id', inplace=False)
+            target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Survival':
             print("Survival")
-            target_df = get_surv_prob(orders, use_cache=False)
+            target_df = get_surv_prob(orders, use_cache=True)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'survival_active_time']
-            target_df.sort_values('driver_id', inplace=False)
+            target_df.sort_values('driver_id', inplace=True)
         else:
             raise NotImplementedError('Decay can only take 4 values')
 
