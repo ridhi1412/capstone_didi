@@ -66,6 +66,7 @@ def merge_order_df(start='2016-11-01', end='2016-11-30',
         ##################################
         # Removing orders where the ride duration is greater than 180 minutes
         orders = orders[orders.ride_duration <= 180]
+        orders.sort_values(['driver_id', 'ride_start_timestamp'], inplace=True)
         ##################################
         pd.to_msgpack(cache_path, orders)
         print(f'Dumping to {cache_path}')
@@ -152,7 +153,7 @@ def groupby_2_sum(orders, use_cache=True):
     return temp2
 
 
-def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
+def create_features(start='2016-11-01', end='2016-11-30', use_cache=True, save_file=True):
     """
     Creates all features going into the linear model
     :param start: Start date of rides
@@ -206,12 +207,14 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
         # TODO check
 
         df_final = pd.merge(df_final, temp2, on=['driver_id'], how='inner', suffixes=('_count', '_sum'))
-        pd.to_msgpack(cache_path, df_final)
+        if save_file:
+            pd.to_msgpack(cache_path, df_final)
     return df_final
 
 
 def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1,
-                     add_idle_time=False, use_radial_features=False, spatial_type='grid', combine_pool=False):
+                     add_idle_time=False, use_radial_features=False, spatial_type='grid',
+                     combine_pool=False, seed=0):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
     cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
     # if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
@@ -230,26 +233,26 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1,
         print('Decay Calculation')
         if decay == 'No Decay':
             print("No Decay")
-            target_df = create_modified_active_time(orders, use_cache=False, combine_pool=combine_pool)
+            target_df = create_modified_active_time(orders, use_cache=True, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time_with_rules']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Old Decay':
             print("Old Decay")
-            target_df = create_modified_active_time_through_decay(orders, use_cache=False, combine_pool=combine_pool)
+            target_df = create_modified_active_time_through_decay(orders, use_cache=True, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'New Decay':
             print("New Decay")
             target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor,
-                                                                   use_cache=False, combine_pool=combine_pool)
+                                                                   use_cache=True, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Survival':
             print("Survival")
-            target_df = get_surv_prob(orders, use_cache=False, combine_pool=combine_pool)
+            target_df = get_surv_prob(orders, use_cache=False, combine_pool=combine_pool, seed=seed)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'survival_active_time']
             target_df.sort_values('driver_id', inplace=True)
@@ -263,6 +266,8 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1,
         df_final = create_features(
             start='2016-11-01', end='2016-11-30', use_cache=True)
         # TODO change to True
+
+        print(df_final.shape)
 
         print(f"Features created in {time.time() - t1}")
         t1 = time.time()
@@ -293,8 +298,10 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1,
 
         df_final.sort_values('driver_id', inplace=True)
         df_final.set_index('driver_id', inplace=True)
+        # breakpoint()
         if sum(df_final.index != target_df['driver_id']) > 0:
             print("Index must match")
+            # breakpoint()
             sys.exit(0)
         pd.to_msgpack(cache_path, df_final)
     return df_final, target_df
