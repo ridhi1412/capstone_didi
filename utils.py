@@ -7,13 +7,16 @@ Created on Fri Sep 27 11:28:24 2019
 #!pip install folium
 #!pip install utm
 
+import math
 import pandas as pd
 import utm
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 
 from h3 import h3
-from common import CACHE_DIR
+from common import (CACHE_DIR, X_CENTER, Y_CENTER,
+                    NUM_CUTS_R_RADIAL, NUM_CUTS_THETA_RADIAL)
 from shapely.geometry import Point
 from shapely.geometry.polygon import Polygon
 
@@ -46,6 +49,232 @@ def idle_time_est_old(t, tau, shape, size):
     idle_time = indicator * i_time
 
     return idle_time
+
+
+def get_inv_cdf(x, c, x0=10):
+    # print(x, c)
+    norm_value = c/np.log(1+np.exp(c*x0))
+    updated_c = c/norm_value
+    # val = np.exp(c*(1-x))
+    val = np.exp(updated_c*(1-x))
+    inv_y = (np.log(val / (1 + np.exp(c*x0) - val)) / c) + x0
+    # print(inv_y)
+    # breakpoint()
+    return inv_y
+
+
+def pool_rides(orders):
+    """
+    Create column for number of pool rides for a driver
+    """
+
+    orders.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
+    orders['shifted_end_time'] = orders['ride_stop_timestamp'].shift(1)
+    orders['shifted_driver'] = orders['driver_id'].shift(1)
+    orders[
+        'cond_1'] = orders['ride_start_timestamp'] < orders['shifted_end_time']
+    orders['cond_2'] = orders['shifted_driver'] == orders['driver_id']
+    orders['is_pool'] = (orders['cond_1'] & orders['cond_2'])
+
+
+def group_pool(df):
+
+    df = df.copy()
+    # breakpoint()
+    pool_rides(df)
+    df['is_pool_shifted'] = df.groupby('driver_id')['is_pool'].shift(-1).fillna(False)
+    df['pool'] = df['is_pool'] + df['is_pool_shifted']
+    #     df['pool_shifted_down'] =  df.groupby('driver_id')['pool'].shift(1)
+    #     df['first_pool_1'] = np.where(df['pool'] != df['pool_shifted_down'], 1, 0)
+    #     df['first_pool_1'].fillna(1)
+    df['factor'] = -df.index
+    df['factor'][df.pool] = 1
+    df['shifted_stop_time_for_ride'] = df.groupby('driver_id')['ride_stop_timestamp'].shift(1)
+    df['check_shift_sign_updated'] = df['ride_start_timestamp'] - df['shifted_stop_time_for_ride']
+    df['check_shift_sign'] = df['ride_start_timestamp'] < df['shifted_stop_time_for_ride']
+    df['check_shift_sign_new'] = np.where(df['check_shift_sign_updated'].dt.total_seconds() < 0, 0, 1)
+    df['check_shift_sign_new'].fillna(1)
+    #     df['cum_sum_1'] = df['check_shift_sign'].cumsum()
+    df['cum_sum_1'] = df.groupby('driver_id')['check_shift_sign_new'].cumsum()
+    df['group_1'] = np.where(df['pool'], df['cum_sum_1'], df['factor'])
+    df['group_1_shifted_down'] = df['group_1'].shift(1)
+    df['driver_id_shifted_down'] = df['driver_id'].shift(1)
+    df['equal_column'] = (df['group_1'] != df['group_1_shifted_down']) | (df['driver_id'] != df['driver_id_shifted_down'])
+    df['cum_sum_2'] = df['equal_column'].cumsum()
+
+    #     df.iloc[~df.pool, 'factor'] = -df.iloc[~df.pool, 'index']
+    #     df.iloc[df.pool, 'factor'] = df.iloc[df.pool, int(df.is_pool)]
+    df = df.groupby(['cum_sum_2']).agg({'ride_start_timestamp': min,
+                                        'ride_stop_timestamp': max,
+                                        'driver_id': 'first', 'order_id': 'first'}).reset_index()
+
+    df['ride_duration'] = (df.ride_stop_timestamp -
+                           df.ride_start_timestamp).dt.total_seconds() / 60
+
+
+    return df
+
+
+def get_surv_prob(orders, c=1, use_cache=True, combine_pool=False, save_file=True, seed=0):
+    cache_path = os.path.join(CACHE_DIR, f'survival_probability_df_pool_{combine_pool}.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        driver_stats_updated = pd.read_msgpack(cache_path)
+        return driver_stats_updated
+
+    else:
+
+        # print("herex`")
+
+        # breakpoint()
+
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
+
+
+        print("Creating the Survival Functions")
+        driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp',
+                                            'ride_stop_timestamp', 'order_id']] \
+            .drop_duplicates()
+        driver_start_times.sort_values(['driver_id', 'ride_start_timestamp'],
+                                       inplace=True)
+        driver_start_times['stop_time_shifted'] = driver_start_times.groupby(
+            'driver_id')['ride_stop_timestamp'].shift(1)
+        driver_start_times['diff'] = driver_start_times[
+                                         'ride_start_timestamp'] - \
+                                     driver_start_times['stop_time_shifted']
+
+        # breakpoint()
+
+        driver_start_times_no_na = driver_start_times.dropna()
+        driver_start_times_no_na['diff'] = driver_start_times_no_na['diff'].dt.total_seconds() / 60
+
+        np.random.seed(seed=seed)
+
+        rand_val = np.random.random(size=len(driver_start_times_no_na))
+        # breakpoint()
+        driver_start_times_no_na['survival_active_time_rand'] = get_inv_cdf(rand_val, c)
+        driver_start_times_no_na['survival_active_time'] = np.minimum(np.maximum(driver_start_times_no_na['diff'], 0),
+                                                                      driver_start_times_no_na['survival_active_time_rand'])
+
+
+
+        # print(driver_start_times_no_na[driver_start_times_no_na.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        # breakpoint()
+
+
+        """
+        When ride difference is negative, we are getting values where survival time is negative which reduces the sum, 
+        So if the ride difference is negative, that would imply overlapping rides which would mean mean the driver 
+        is active on the system for this ride, so we would have counted that ride for the pool and will take this 
+        as 0  
+        """
+
+        """
+        Our survival active time only considers the time the driver was active in between rides, it does not take 
+        into account the those times into account when the driver was using in a ride. So our actual active time 
+        will be the sum of the ride duration and the survival active time 
+        
+        So note this correction 
+        """
+
+        driver_day_min = pd.DataFrame(
+            orders.groupby('driver_id')
+            ['ride_start_timestamp'].min()).reset_index()
+        driver_day_max = pd.DataFrame(
+            orders.groupby('driver_id')
+            ['ride_stop_timestamp'].max()).reset_index()
+        driver_active_time = driver_day_min.merge(
+            driver_day_max, on='driver_id', how='left')
+        driver_active_time['active_time'] = (
+                                                    driver_active_time[
+                                                        'ride_stop_timestamp'] -
+                                                    driver_active_time[
+                                                        'ride_start_timestamp']).dt.total_seconds() / 60
+        ##
+
+        ##
+        # print("\n\n\n")
+        # print(driver_active_time[driver_active_time.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        driver_ride_durations = orders.groupby('driver_id')[[
+            'ride_duration'
+        ]].sum().reset_index()
+
+        # print("\n\n\n")
+        # print(driver_ride_durations[driver_ride_durations.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        ##
+
+        ##
+        # total driver active time
+        driver_stats = driver_active_time[['driver_id', 'active_time']].merge(
+            driver_ride_durations, on='driver_id', how='left')
+
+        ##
+        total_active_time = driver_start_times_no_na.groupby(
+            'driver_id')['survival_active_time'].sum().reset_index()
+
+        # print("\n\n\n")
+        # print(total_active_time[total_active_time.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+        ##
+        driver_stats_updated = driver_stats.merge(
+            total_active_time[['driver_id', 'survival_active_time']],
+            on='driver_id',
+            how='left')
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00002724a19c5f6a54ae8d60a378997e'])
+        # print("\n\n\n")
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+        # exit(0)
+
+        driver_stats_updated['survival_active_time'] = driver_stats_updated['survival_active_time'] + \
+                                                       driver_stats_updated['ride_duration']
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        driver_stats_updated.loc[(pd.isnull(driver_stats_updated.survival_active_time)),
+                                 'survival_active_time'] = driver_stats_updated.active_time
+
+        # print("\n\n\n")
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        driver_stats_updated['inactive_time'] = driver_stats_updated['active_time'] - \
+                                                driver_stats_updated['survival_active_time']
+
+        # print("\n\n\n")
+        #
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00032bc2d22da93ecfaa7b25a9a6f445'])
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00002724a19c5f6a54ae8d60a378997e'])
+        # breakpoint()
+
+        cols = [
+            'driver_id', 'ride_duration', 'survival_active_time', 'inactive_time'
+        ]
+
+        driver_stats_updated = driver_stats_updated[cols]
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
+
+
+        return driver_stats_updated
+
+
+# def get_tau_nought(c):
+#     def f(c, x):
+#         1/(1+math.exp(c*x))
+#     tau0 = np.ln(1/0.95 - 1)/c
+#     return tau0
+
+
+def get_inverse_func(c, y):
+    tau0 = np.ln(1 / 0.95 - 1) / c
+    temp = np.ln(1/y - 1)/c
+    return np.minimum(temp, tau0)
 
 
 def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
@@ -85,8 +314,49 @@ def get_spatial_features(df, grid_x_num=10, grid_y_num=10,
         print(f'Dumping to {cache_path}')
     return temp
 
-def get_spatial_features_hex(df, resolution =6, use_cache=True):
 
+def get_spatial_features_radial(df, grid_x_num=10, grid_y_num=10,
+                         use_cache=True):
+    cache_path = os.path.join(CACHE_DIR, f'radial_spatial_df.msgpack')
+    if os.path.exists(cache_path) and use_cache:
+        print(f'{cache_path} exists')
+        temp = pd.read_msgpack(cache_path)
+    else:
+        cols = ['r_radial', 'theta_radial']
+        create_radial_bins(df, cols)
+
+        grouped_tmp = df[['driver_id', 'pick_up_radial_zone', 'pickup_latitude']].groupby(
+            ['driver_id', 'pick_up_radial_zone']).count() / df[[
+                'driver_id', 'pick_up_radial_zone', 'pickup_latitude'
+            ]].groupby(['driver_id'])[['pickup_latitude']].count()
+        temp = grouped_tmp.unstack(level=0).T
+        temp.fillna(0, inplace=True)
+        temp.reset_index(inplace=True)
+        temp.drop(columns=['level_0'], inplace=True)
+        pd.to_msgpack(cache_path, temp)
+        print(f'Dumping to {cache_path}')
+    return temp
+
+
+def get_radial_coords(df):
+    df['xpickup'], df['ypickup'], _, _ = utm.from_latlon(df['pickup_latitude'].values,
+                                   df['pickup_longitude'].values)
+
+    x_center, y_center, _, _ = utm.from_latlon(X_CENTER, Y_CENTER)
+    print('center is ', x_center, y_center)
+    df['x_diff'] = df.xpickup - x_center
+    df['y_diff'] = df.ypickup - y_center
+    df['r_radial'], df['theta_radial'] = cart2pol(df['x_diff'], df['y_diff'])
+
+
+def cart2pol(x, y):
+    r = np.sqrt(x**2 + y**2)
+    theta = np.arctan2(y, x) * 180 / np.pi
+    return(r, theta)
+
+def get_spatial_features_hex(df, resolution=6, use_cache=True):
+
+    print('Now creating spatial features')
     cache_path = os.path.join(CACHE_DIR, f'hex_spatial_df.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
@@ -97,7 +367,7 @@ def get_spatial_features_hex(df, resolution =6, use_cache=True):
         maxlat  = max(df.pickup_latitude)
         maxlong = max(df.pickup_longitude)
         geoJson = {'type': 'Polygon',
-                      'coordinates': [[[minlat, minlong], [minlat, maxlong ], [maxlat, maxlong], [ maxlat, minlong ]]] }
+                   'coordinates': [[[minlat, minlong], [minlat, maxlong ], [maxlat, maxlong], [ maxlat, minlong ]]] }
 
         hexagons = list(h3.polyfill(geoJson, resolution))
 
@@ -139,16 +409,23 @@ def get_spatial_features_hex(df, resolution =6, use_cache=True):
     return temp
 
 
-
-def create_modified_active_time(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'active_times.msgpack')
+def create_modified_active_time(orders, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'active_times_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
+
+        print(orders.shape)
+
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
+
+        print(driver_start_times.shape)
         driver_start_times.sort_values(['driver_id', 'ride_start_timestamp'],
                                        inplace=True)
         driver_start_times['stop_time_shifted'] = driver_start_times.groupby(
@@ -157,6 +434,7 @@ def create_modified_active_time(orders, use_cache=True):
             'ride_start_timestamp'] - driver_start_times['stop_time_shifted']
 
         ##
+
         driver_day_min = pd.DataFrame(
             orders.groupby('driver_id')
             ['ride_start_timestamp'].min()).reset_index()
@@ -170,16 +448,22 @@ def create_modified_active_time(orders, use_cache=True):
             driver_active_time['ride_start_timestamp']).dt.total_seconds() / 60
         ##
 
+        print(driver_active_time.shape)
+
         ##
         driver_ride_durations = orders.groupby('driver_id')[[
             'ride_duration'
         ]].sum().reset_index()
         ##
 
+        print(driver_ride_durations.shape)
+
         ##
         # total driver active time
         driver_stats = driver_active_time[['driver_id', 'active_time']].merge(
             driver_ride_durations, on='driver_id', how='left')
+
+        print(driver_stats.shape)
 
 
         ##
@@ -190,6 +474,8 @@ def create_modified_active_time(orders, use_cache=True):
         total_inactive_time[
             'inactive_time'] = total_inactive_time['diff'].dt.total_seconds() / 60
         ##
+
+        print(drivers_with_greater_than_an_hour_break.shape)
 
         ##
         driver_stats_updated = driver_stats.merge(
@@ -206,25 +492,31 @@ def create_modified_active_time(orders, use_cache=True):
                     driver_stats_updated['inactive_time'], 60)
         ##
 
+        print(driver_stats_updated.shape)
+
         cols = [
             'driver_id', 'ride_duration', 'modified_active_time',
             'modified_active_time_with_rules'
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
 
 
-def create_modified_active_time_through_decay(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times_old.msgpack')
+def create_modified_active_time_through_decay(orders, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_old_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
         print("Creating the exponential decay")
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
@@ -289,19 +581,23 @@ def create_modified_active_time_through_decay(orders, use_cache=True):
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
 
 
-def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times_new_{mult_factor}.msgpack')
+def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_new_{mult_factor}_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
         print("Creating the exponential decay")
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
@@ -326,6 +622,8 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
 
         stop_times = driver_start_times_no_na.ride_stop_timestamp
         driver_start_times_no_na['total_hour'] = (stop_times.dt.hour * 3600 + stop_times.dt.minute * 60 + stop_times.dt.second) / 3600
+
+        # print(driver_start_times_no_na)
 
         # Modeling lambda
         stats_df = driver_start_times_no_na.groupby('hour')['new_diff'].agg(['count', 'mean']).reset_index()
@@ -356,6 +654,10 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
 
         driver_start_times_no_na['inactive_time'] = idle_time_est(driver_start_times_no_na['diff'], tau, shape)
 
+        # print(driver_start_times_no_na[['ride_start_timestamp', 'ride_stop_timestamp', 'new_diff',
+        #                                 'inactive_time', 'start_time_shifted']]
+        #       [driver_start_times_no_na.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         ##
         driver_day_min = pd.DataFrame(
             orders.groupby('driver_id')
@@ -376,6 +678,10 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
         ]].sum().reset_index()
         ##
 
+        # print("\n\n\n")
+
+        # print(driver_ride_durations[driver_ride_durations.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         ##
         # total driver active time
         driver_stats = driver_active_time[['driver_id', 'active_time']].merge(
@@ -392,12 +698,38 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
         driver_stats_updated['modified_active_time'] = driver_stats_updated[
             'active_time'] - driver_stats_updated['inactive_time']
 
+        # print("\n\n\n")
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         cols = [
             'driver_id', 'ride_duration', 'modified_active_time', 'inactive_time'
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
+
+
+def plot_active_time_with_k(dataframe, title):
+    plt.title(f'{title}')
+    dataframe[['modified_active_time']].plot.hist(bins=100)
+    plt.show()
+
+
+def create_radial_bins(df, cols=None):
+    get_radial_coords(df)
+    cuts = [NUM_CUTS_R_RADIAL, NUM_CUTS_THETA_RADIAL]
+    for col, cut in zip(cols, cuts):
+        print('checking bins name ', col, cut)
+        # try:
+        df[f'{col}_bin'] = pd.qcut(df[f'{col}'], cut).astype(str)
+        # except Exception as e:
+        #     import sys
+        #     sys.exit()
+        #     print(cut, col)
+        print(df.head())
+    df['pick_up_radial_zone'] = df['r_radial_bin'] + df['theta_radial_bin']

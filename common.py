@@ -9,6 +9,12 @@ import os
 
 path = [r'../Capstone - Data', r'../Ride_Data_Cache']
 
+X_CENTER = 30.659627
+Y_CENTER = 104.065716
+
+NUM_CUTS_R_RADIAL = 10
+NUM_CUTS_THETA_RADIAL = 10
+
 if os.path.isdir(path[0]):
     DATA_DIR = path[0]
     CACHE_DIR = path[1]
