@@ -60,14 +60,67 @@ def get_inv_cdf(x, c, x0=10):
     return inv_y
 
 
-def get_surv_prob(orders, c=1, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'survival_probability_df.msgpack')
+def pool_rides(orders):
+    """
+    Create column for number of pool rides for a driver
+    """
+
+    orders.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
+    orders['shifted_end_time'] = orders['ride_stop_timestamp'].shift(1)
+    orders['shifted_driver'] = orders['driver_id'].shift(1)
+    orders[
+        'cond_1'] = orders['ride_start_timestamp'] < orders['shifted_end_time']
+    orders['cond_2'] = orders['shifted_driver'] == orders['driver_id']
+    orders['is_pool'] = (orders['cond_1'] & orders['cond_2'])
+
+
+def group_pool(df):
+    df = df.copy()
+    pool_rides(df)
+    df['is_pool_shifted'] = df.groupby('driver_id')['is_pool'].shift(-1).fillna(False)
+    df['pool'] = df['is_pool'] + df['is_pool_shifted']
+    # df['pool_shifted_down'] =  df.groupby('driver_id')['pool'].shift(1)
+    # df['first_pool_1'] = np.where(df['pool'] != df['pool_shifted_down'], 1, 0)
+    # df['first_pool_1'].fillna(1)
+    df['factor'] = -df.index
+    df['factor'][df.pool] = 1
+    df['shifted_stop_time_for_ride'] = df.groupby('driver_id')['ride_stop_timestamp'].shift(1)
+    df['check_shift_sign_updated'] = df['ride_start_timestamp'] - df['shifted_stop_time_for_ride']
+    df['check_shift_sign'] = df['ride_start_timestamp'] < df['shifted_stop_time_for_ride']
+    df['check_shift_sign_new'] = np.where(df['check_shift_sign_updated'].dt.total_seconds() < 0, 0, 1)
+    df['check_shift_sign_new'].fillna(1)
+    df['cum_sum_1'] = df['check_shift_sign'].cumsum()
+    # df['cum_sum_1'] = df.groupby('driver_id')['check_shift_sign_new'].cumsum()
+    df['group_1'] = np.where(df['pool'], df['cum_sum_1'], df['factor'])
+    df['group_1_shifted_down'] = df['group_1'].shift(1)
+    df['equal_column'] = df['group_1'] !=  df['group_1_shifted_down']
+    df['cum_sum_2'] = df['equal_column'].cumsum()
+    # df.iloc[~df.pool, 'factor'] = -df.iloc[~df.pool, 'index']
+    # df.iloc[df.pool, 'factor'] = df.iloc[df.pool, int(df.is_pool)]
+    # df['actual_ride_start'] = df.groupby('cum_sum_2')['ride_start_timestamp'].min().transform('min')
+    df = df.groupby(['cum_sum_2']).agg({'ride_start_timestamp': min,
+                                        'ride_stop_timestamp': max,
+                                        'driver_id': 'first', 'order_id': 'first'}).reset_index()
+    df['ride_duration'] = (df.ride_stop_timestamp -
+                           df.ride_start_timestamp).dt.total_seconds() / 60
+    return df
+
+
+def get_surv_prob(orders, c=1, use_cache=True, combine_pool=False, save_file=True):
+    cache_path = os.path.join(CACHE_DIR, f'survival_probability_df_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
         return driver_stats_updated
 
     else:
+
+        print("herex`")
+
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
+
         print("Creating the Survival Functions")
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp',
                                             'ride_stop_timestamp', 'order_id']] \
@@ -89,6 +142,7 @@ def get_surv_prob(orders, c=1, use_cache=True):
         driver_start_times_no_na['survival_active_time'] = np.minimum(np.maximum(driver_start_times_no_na['diff'], 0),
                                                                       driver_start_times_no_na['survival_active_time'])
 
+        breakpoint()
 
         """
         When ride difference is negative, we are getting values where survival time is negative which reduces the sum, 
@@ -140,23 +194,27 @@ def get_surv_prob(orders, c=1, use_cache=True):
             on='driver_id',
             how='left')
 
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00002724a19c5f6a54ae8d60a378997e'])
+        # exit(0)
+
+        driver_stats_updated['survival_active_time'] = driver_stats_updated['survival_active_time'] + driver_stats_updated['ride_duration']
+
         driver_stats_updated.loc[(pd.isnull(driver_stats_updated.survival_active_time)),
                                  'survival_active_time'] = driver_stats_updated.active_time
 
-        driver_stats_updated['survival_active_time'] = driver_stats_updated['survival_active_time'] + \
-                                                       driver_stats_updated['ride_duration']
 
-        driver_stats_updated['inactive_time'] = driver_stats_updated[
-                                                           'active_time'] - \
-                                                       driver_stats_updated[
-                                                           'survival_active_time']
+        driver_stats_updated['inactive_time'] = driver_stats_updated['active_time'] - driver_stats_updated['survival_active_time']
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '00002724a19c5f6a54ae8d60a378997e'])
+        # breakpoint()
 
         cols = [
             'driver_id', 'ride_duration', 'survival_active_time', 'inactive_time'
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
         print(f'Dumping to {cache_path}')
 
 
@@ -308,14 +366,17 @@ def get_spatial_features_hex(df, resolution=6, use_cache=True):
     return temp
 
 
-
-def create_modified_active_time(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'active_times.msgpack')
+def create_modified_active_time(orders, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'active_times_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
+
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
         driver_start_times.sort_values(['driver_id', 'ride_start_timestamp'],
@@ -381,19 +442,23 @@ def create_modified_active_time(orders, use_cache=True):
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
 
 
-def create_modified_active_time_through_decay(orders, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times_old.msgpack')
+def create_modified_active_time_through_decay(orders, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_old_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
         print("Creating the exponential decay")
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
@@ -458,19 +523,23 @@ def create_modified_active_time_through_decay(orders, use_cache=True):
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
 
 
-def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=True):
-    cache_path = os.path.join(CACHE_DIR, f'idle_times_new_{mult_factor}.msgpack')
+def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=True, save_file=True, combine_pool=False):
+    cache_path = os.path.join(CACHE_DIR, f'idle_times_new_{mult_factor}_pool_{combine_pool}.msgpack')
     if os.path.exists(cache_path) and use_cache:
         print(f'{cache_path} exists')
         driver_stats_updated = pd.read_msgpack(cache_path)
 
     else:
+        if combine_pool:
+            orders = orders.copy()
+            orders = group_pool(orders)
         print("Creating the exponential decay")
         driver_start_times = orders.loc[:, ['driver_id', 'ride_start_timestamp', 'ride_stop_timestamp', 'order_id']]\
             .drop_duplicates()
@@ -495,6 +564,8 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
 
         stop_times = driver_start_times_no_na.ride_stop_timestamp
         driver_start_times_no_na['total_hour'] = (stop_times.dt.hour * 3600 + stop_times.dt.minute * 60 + stop_times.dt.second) / 3600
+
+        # print(driver_start_times_no_na)
 
         # Modeling lambda
         stats_df = driver_start_times_no_na.groupby('hour')['new_diff'].agg(['count', 'mean']).reset_index()
@@ -525,6 +596,10 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
 
         driver_start_times_no_na['inactive_time'] = idle_time_est(driver_start_times_no_na['diff'], tau, shape)
 
+        # print(driver_start_times_no_na[['ride_start_timestamp', 'ride_stop_timestamp', 'new_diff',
+        #                                 'inactive_time', 'start_time_shifted']]
+        #       [driver_start_times_no_na.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         ##
         driver_day_min = pd.DataFrame(
             orders.groupby('driver_id')
@@ -545,6 +620,10 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
         ]].sum().reset_index()
         ##
 
+        # print("\n\n\n")
+
+        # print(driver_ride_durations[driver_ride_durations.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         ##
         # total driver active time
         driver_stats = driver_active_time[['driver_id', 'active_time']].merge(
@@ -561,13 +640,18 @@ def create_modified_active_time_through_decay2(orders, mult_factor, use_cache=Tr
         driver_stats_updated['modified_active_time'] = driver_stats_updated[
             'active_time'] - driver_stats_updated['inactive_time']
 
+        # print("\n\n\n")
+
+        # print(driver_stats_updated[driver_stats_updated.driver_id == '0001860739024029fa3da2cad0ed4de2'])
+
         cols = [
             'driver_id', 'ride_duration', 'modified_active_time', 'inactive_time'
         ]
 
         driver_stats_updated = driver_stats_updated[cols]
-        pd.to_msgpack(cache_path, driver_stats_updated)
-        print(f'Dumping to {cache_path}')
+        if save_file:
+            pd.to_msgpack(cache_path, driver_stats_updated)
+            print(f'Dumping to {cache_path}')
 
     return driver_stats_updated
 

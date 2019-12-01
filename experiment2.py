@@ -5,13 +5,14 @@ Created on Sun Oct  6 14:11:27 2019
 @author: rmahajan14
 """
 
+import sys
 import os
 import datetime
 import pandas as pd
 import numpy as np
 from utils import (get_start_end_bins, get_spatial_features, get_spatial_features_hex,
                    create_modified_active_time, create_modified_active_time_through_decay,
-                   create_modified_active_time_through_decay2, get_spatial_features_radial, get_surv_prob)
+                   create_modified_active_time_through_decay2, get_spatial_features_radial, get_surv_prob, pool_rides)
 from loader1 import read_data
 from common import CACHE_DIR
 from sklearn.model_selection import train_test_split
@@ -19,6 +20,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import LinearRegression, RidgeCV, LassoCV, ElasticNet
 from sklearn.ensemble import RandomForestRegressor
 import time
+
 
 
 def get_date_list(start='2016-11-01', end='2016-11-30'):
@@ -34,18 +36,7 @@ def get_date_list(start='2016-11-01', end='2016-11-30'):
     return date_str_list
 
 
-def pool_rides(orders):
-    """
-    Create column for number of pool rides for a driver
-    """
 
-    orders.sort_values(by=['driver_id', 'ride_start_timestamp'], inplace=True)
-    orders['shifted_end_time'] = orders['ride_stop_timestamp'].shift(1)
-    orders['shifted_driver'] = orders['driver_id'].shift(1)
-    orders[
-        'cond_1'] = orders['ride_start_timestamp'] < orders['shifted_end_time']
-    orders['cond_2'] = orders['shifted_driver'] == orders['driver_id']
-    orders['is_pool'] = (orders['cond_1'] & orders['cond_2'])
 
 
 
@@ -219,7 +210,8 @@ def create_features(start='2016-11-01', end='2016-11-30', use_cache=True):
     return df_final
 
 
-def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle_time=False, use_radial_features=False, spatial_type='grid'):
+def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1,
+                     add_idle_time=False, use_radial_features=False, spatial_type='grid', combine_pool=False):
     cache_path = os.path.join(CACHE_DIR, f'final_df_reg.msgpack')
     cache_path_idle_time = os.path.join(CACHE_DIR, f'idle_times.msgpack')
     # if os.path.exists(cache_path) and os.path.exists(cache_path_idle_time) and use_cache:
@@ -238,25 +230,26 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
         print('Decay Calculation')
         if decay == 'No Decay':
             print("No Decay")
-            target_df = create_modified_active_time(orders, use_cache=True)
+            target_df = create_modified_active_time(orders, use_cache=False, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time_with_rules']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Old Decay':
             print("Old Decay")
-            target_df = create_modified_active_time_through_decay(orders, use_cache=True)
+            target_df = create_modified_active_time_through_decay(orders, use_cache=False, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'New Decay':
             print("New Decay")
-            target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor, use_cache=True)
+            target_df = create_modified_active_time_through_decay2(orders, mult_factor=mult_factor,
+                                                                   use_cache=False, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'modified_active_time']
             target_df.sort_values('driver_id', inplace=True)
         elif decay == 'Survival':
             print("Survival")
-            target_df = get_surv_prob(orders, use_cache=True)
+            target_df = get_surv_prob(orders, use_cache=False, combine_pool=combine_pool)
             target_df['target'] = target_df['ride_duration'] / target_df[
                 'survival_active_time']
             target_df.sort_values('driver_id', inplace=True)
@@ -300,6 +293,9 @@ def get_final_df_reg(use_cache=False, decay='New Decay', mult_factor=1, add_idle
 
         df_final.sort_values('driver_id', inplace=True)
         df_final.set_index('driver_id', inplace=True)
+        if sum(df_final.index != target_df['driver_id']) > 0:
+            print("Index must match")
+            sys.exit(0)
         pd.to_msgpack(cache_path, df_final)
     return df_final, target_df
 
